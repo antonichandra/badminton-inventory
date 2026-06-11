@@ -1,5 +1,5 @@
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "../context/LanguageContext";
 import { Button } from "./ui/Button";
 
@@ -51,44 +51,142 @@ export function GoogleSignInButton({
   fullWidth = true,
 }: GoogleSignInButtonProps) {
   const { translate } = useLanguage();
-  const hiddenContainerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const googleLayerRef = useRef<HTMLDivElement>(null);
+  const [buttonWidth, setButtonWidth] = useState(320);
 
-  const handleClick = () => {
-    const googleButton = hiddenContainerRef.current?.querySelector(
-      'div[role="button"]',
-    ) as HTMLElement | null;
-    googleButton?.click();
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+  useEffect(() => {
+    console.log("[GoogleSignIn] mount", {
+      hasClientId: Boolean(clientId),
+      clientIdPrefix: clientId ? `${clientId.slice(0, 12)}...` : "missing",
+      origin: window.location.origin,
+    });
+
+    if (!clientId) {
+      console.error(
+        "[GoogleSignIn] VITE_GOOGLE_CLIENT_ID is missing — Google login will not work.",
+      );
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateWidth = () => {
+      const width = Math.max(container.offsetWidth, 200);
+      setButtonWidth(width);
+      console.log("[GoogleSignIn] button width updated", width);
+    };
+
+    updateWidth();
+
+    const resizeObserver = new ResizeObserver(updateWidth);
+    resizeObserver.observe(container);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const layer = googleLayerRef.current;
+    if (!layer) return;
+
+    const detectGoogleButton = () => {
+      const googleButton = layer.querySelector(
+        'div[role="button"], iframe',
+      ) as HTMLElement | null;
+
+      if (googleButton) {
+        console.log("[GoogleSignIn] Google button rendered", {
+          tag: googleButton.tagName,
+          role: googleButton.getAttribute("role"),
+        });
+        return true;
+      }
+
+      return false;
+    };
+
+    if (detectGoogleButton()) return;
+
+    console.log("[GoogleSignIn] waiting for Google button to render...");
+
+    const observer = new MutationObserver(() => {
+      detectGoogleButton();
+    });
+
+    observer.observe(layer, { childList: true, subtree: true });
+
+    const timeout = window.setTimeout(() => {
+      if (!detectGoogleButton()) {
+        console.warn(
+          "[GoogleSignIn] Google button not found after 5s — check client_id, origin, or ad blockers.",
+        );
+      }
+    }, 5000);
+
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timeout);
+    };
+  }, [loading, buttonWidth]);
+
+  const handleSuccess = (response: CredentialResponse) => {
+    console.log("[GoogleSignIn] credential received", {
+      hasCredential: Boolean(response.credential),
+    });
+    onSuccess(response);
   };
 
-  return (
-    <div className={fullWidth ? "w-full" : ""}>
-      <div
-        ref={hiddenContainerRef}
-        className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
-        aria-hidden="true"
-      >
-        <GoogleLogin
-          onSuccess={onSuccess}
-          onError={onError}
-          auto_select={false}
-          theme="outline"
-          size="large"
-          text="signup_with"
-          shape="rectangular"
-          width="320"
-        />
-      </div>
+  const handleError = () => {
+    console.error("[GoogleSignIn] GoogleLogin onError fired");
+    onError();
+  };
 
+  const buttonLabel = label ?? translate("loginButton");
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative ${fullWidth ? "w-full" : "inline-block"}`}
+    >
+      {/* Visual layer — same styling as before, not disabled */}
       <Button
         variant={variant}
         size={size}
-        className={`${fullWidth ? "w-full" : ""} ${className}`.trim()}
-        onClick={handleClick}
+        className={`pointer-events-none select-none ${fullWidth ? "w-full" : ""} ${className}`.trim()}
         loading={loading}
         leftIcon={!loading ? <GoogleIcon /> : undefined}
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
       >
-        {label ?? translate("loginButton")}
+        {buttonLabel}
       </Button>
+
+      {/* Invisible click target — receives all pointer events */}
+      {!loading && clientId && (
+        <div
+          ref={googleLayerRef}
+          className="absolute inset-0 z-10 cursor-pointer overflow-hidden opacity-0"
+          aria-label={buttonLabel}
+        >
+          <GoogleLogin
+            onSuccess={handleSuccess}
+            onError={handleError}
+            auto_select={false}
+            theme="outline"
+            size="large"
+            text="continue_with"
+            shape="rectangular"
+            width={buttonWidth}
+          />
+        </div>
+      )}
     </div>
   );
 }
