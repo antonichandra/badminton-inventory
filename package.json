@@ -9,6 +9,7 @@
     "dev:backend": "convex dev",
     "build": "tsc -b && vite build",
     "vercel-build": "npx convex deploy --cmd 'npm run build'",
+    "release": "git checkout production && git merge development && git push origin production && git checkout development",
     "lint": "eslint .",
     "preview": "vite preview"
   },
