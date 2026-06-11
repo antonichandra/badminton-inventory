@@ -18,7 +18,12 @@ export function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleGoogleSuccess = async (response: CredentialResponse) => {
+    console.log("[Login] handleGoogleSuccess", {
+      hasCredential: Boolean(response.credential),
+    });
+
     if (!response.credential) {
+      console.error("[Login] missing credential in Google response");
       showToast({ type: "error", message: translate("errorAuth") });
       return;
     }
@@ -26,7 +31,12 @@ export function LoginPage() {
     setIsSubmitting(true);
 
     try {
+      console.log("[Login] calling authenticate...");
       const session = await login(response.credential);
+      console.log("[Login] authenticate success", {
+        status: session.user.status,
+        email: session.user.email,
+      });
 
       if (session.user.status === "APPROVED") {
         await navigateWithTransition(navigate, "/dashboard");
@@ -34,7 +44,7 @@ export function LoginPage() {
         await navigateWithTransition(navigate, "/waiting-approval");
       }
     } catch (err) {
-      console.error("Login failed:", err);
+      console.error("[Login] authenticate failed:", err);
       showToast({
         type: "error",
         message:
@@ -89,9 +99,10 @@ export function LoginPage() {
           <div className="space-y-4">
             <GoogleSignInButton
               onSuccess={handleGoogleSuccess}
-              onError={() =>
-                showToast({ type: "error", message: translate("errorAuth") })
-              }
+              onError={() => {
+                console.error("[Login] GoogleSignIn onError");
+                showToast({ type: "error", message: translate("errorAuth") });
+              }}
               loading={isSubmitting}
             />
           </div>
