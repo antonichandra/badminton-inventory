@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -10,19 +10,11 @@ import { ConfirmModal } from "../../core/components/ui/ConfirmModal";
 import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
-import { navigateWithTransition } from "../../core/utils/viewTransition";
-import {
-  BusinessFormFields,
-  validateBusinessForm,
-  type BusinessFormErrors,
-  type BusinessFormValues,
-} from "./components/BusinessFormFields";
-import {
-  StaffInvitationTable,
-  type StaffInvitationRow,
-} from "./components/StaffInvitationTable";
 import { translateStaffStatus } from "../../core/i18n/statuses";
+import { navigateWithTransition } from "../../core/utils/viewTransition";
 import { EditUserRoleModal } from "../master/users/EditUserRoleModal";
+import { BusinessFormFields, validateBusinessForm, type BusinessFormErrors, type BusinessFormValues } from "./components/BusinessFormFields";
+import { StaffInvitationTable, type StaffInvitationRow } from "./components/StaffInvitationTable";
 import { toStaffDisplayStatus } from "./staffStatus";
 
 const EMPTY_VALUES: BusinessFormValues = {
