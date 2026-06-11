@@ -1,0 +1,28 @@
+export const nav = {
+  ID: {
+    navDashboard: "Dashboard",
+    navLogout: "Keluar",
+    navProfile: "Profil",
+    navOpenMenu: "Buka menu",
+    navCloseMenu: "Tutup menu",
+    menuBusiness: "Bisnis",
+    menuKasir: "Kasir",
+    menuMaster: "Master",
+    menuProduk: "Produk",
+    menuRole: "Role",
+    menuAkun: "Users",
+  },
+  EN: {
+    navDashboard: "Dashboard",
+    navLogout: "Sign Out",
+    navProfile: "Profile",
+    navOpenMenu: "Open menu",
+    navCloseMenu: "Close menu",
+    menuBusiness: "Business",
+    menuKasir: "Cashier",
+    menuMaster: "Master",
+    menuProduk: "Products",
+    menuRole: "Roles",
+    menuAkun: "Users",
+  },
+} as const;
