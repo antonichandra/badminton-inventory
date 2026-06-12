@@ -1,11 +1,13 @@
 interface PageHeaderProps {
   title: string;
   subtitle?: string;
+  /** Remove bottom margin when placed inside PageTopSection. */
+  embedded?: boolean;
 }
 
-export function PageHeader({ title, subtitle }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, embedded = false }: PageHeaderProps) {
   return (
-    <div className="mb-5 sm:mb-8">
+    <div className={embedded ? "mb-0" : "mb-5 sm:mb-8"}>
       <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
         {title}
       </h1>

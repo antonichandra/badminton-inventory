@@ -6,6 +6,8 @@ import { dashboard } from "./translations/dashboard";
 import { business } from "./translations/business";
 import { master } from "./translations/master";
 import { nav } from "./translations/nav";
+import { sports } from "./translations/sports";
+import { inventory } from "./translations/inventory";
 
 const id = {
   ...app.ID,
@@ -15,6 +17,8 @@ const id = {
   ...master.ID,
   ...business.ID,
   ...common.ID,
+  ...sports.ID,
+  ...inventory.ID,
 } as const;
 
 const en = {
@@ -25,6 +29,8 @@ const en = {
   ...master.EN,
   ...business.EN,
   ...common.EN,
+  ...sports.EN,
+  ...inventory.EN,
 } as const;
 
 export const translations = {

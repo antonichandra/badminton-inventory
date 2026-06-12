@@ -6,6 +6,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { AdminListStats } from "../../../core/components/AdminListStats";
 import { GoogleSignInButton } from "../../../core/components/GoogleSignInButton";
 import { PageHeader } from "../../../core/components/PageHeader";
+import { PageTopSection } from "../../../core/components/PageTopSection";
 import { PermissionGuard } from "../../../core/components/PermissionGuard";
 import { ResponsiveFilterBar } from "../../../core/components/filters/ResponsiveFilterBar";
 import { DataTable } from "../../../core/components/table/DataTable";
@@ -15,6 +16,10 @@ import { useToast } from "../../../core/context/ToastContext";
 import { useFilterState } from "../../../core/hooks/useFilterState";
 import { useLanguage } from "../../../core/context/LanguageContext";
 import type { TranslationKey } from "../../../core/i18n";
+import {
+  mapSportSelectOptions,
+  translateSportName,
+} from "../../../core/i18n/sports";
 import {
   buildUserStatusOptions,
   translateUserStatus,
@@ -153,6 +158,11 @@ export function UsersPage() {
   const userStatusOptions = useMemo(
     () => buildUserStatusOptions(translate),
     [translate],
+  );
+
+  const translatedSportOptions = useMemo(
+    () => mapSportSelectOptions(sportOptions ?? [], translate),
+    [sportOptions, translate],
   );
 
   const filterFields = useMemo(
@@ -519,6 +529,8 @@ export function UsersPage() {
           isSuperAdmin,
           currentUserId: user?._id,
           formatUserStatus: (status) => translateUserStatus(translate, status),
+          formatSportName: (slug, fallbackName) =>
+            translateSportName(translate, slug, fallbackName),
         },
         {
           onApproveRequest: setUserToApprove,
@@ -574,8 +586,9 @@ export function UsersPage() {
 
   return (
     <PermissionGuard permission="master_akun">
-      <div className="flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
+      <PageTopSection>
         <PageHeader
+          embedded
           title={translate("pageUsersTitle")}
           subtitle={translate(
             isSuperAdmin ? "pageUsersSubtitle" : "pageUsersSubtitleAdmin",
@@ -586,8 +599,8 @@ export function UsersPage() {
             label={translate("usersRegisterPendingAdmin")}
             variant="secondary"
             size="md"
-            fullWidth={false}
-            className="shrink-0"
+            fullWidth
+            className="w-full shrink-0 sm:w-auto"
             loading={isRegistering}
             onSuccess={(response) => void handleRegisterAdmin(response)}
             onError={() =>
@@ -598,7 +611,7 @@ export function UsersPage() {
             }
           />
         )}
-      </div>
+      </PageTopSection>
 
       {isSuperAdmin && (
         <AdminListStats
@@ -619,7 +632,7 @@ export function UsersPage() {
           optionMap={{
             roles: roleOptions ?? [],
             businesses: businessFilterOptions,
-            sports: sportOptions ?? [],
+            sports: translatedSportOptions,
           }}
           applyLabel={translate("filterApply")}
           resetLabel={translate("filterReset")}

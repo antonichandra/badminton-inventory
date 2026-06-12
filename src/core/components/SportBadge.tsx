@@ -1,12 +1,5 @@
+import { getSportEmoji } from "../config/sportEmoji";
 import { cn } from "../utils/cn";
-
-const SPORT_EMOJI: Record<string, string> = {
-  badminton: "🏸",
-  futsal: "⚽",
-  basket: "🏀",
-  tenis: "🎾",
-  voli: "🏐",
-};
 
 interface SportBadgeProps {
   slug: string;
@@ -21,7 +14,7 @@ export function SportBadge({
   size = "sm",
   className,
 }: SportBadgeProps) {
-  const emoji = SPORT_EMOJI[slug] ?? "🏟️";
+  const emoji = getSportEmoji(slug);
 
   return (
     <span

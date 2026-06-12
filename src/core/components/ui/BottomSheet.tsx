@@ -11,6 +11,8 @@ interface BottomSheetProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Reserve space at the bottom (e.g. sticky pay bar). */
+  bottomInset?: string;
 }
 
 export function BottomSheet({
@@ -19,6 +21,7 @@ export function BottomSheet({
   title,
   children,
   footer,
+  bottomInset,
 }: BottomSheetProps) {
   const titleId = useId();
   const [mounted, setMounted] = useState(open);
@@ -63,7 +66,10 @@ export function BottomSheet({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    <div
+      className="fixed inset-0 z-[65] flex items-end justify-center"
+      style={bottomInset ? { paddingBottom: bottomInset } : undefined}
+    >
       <button
         type="button"
         aria-label="Close panel"

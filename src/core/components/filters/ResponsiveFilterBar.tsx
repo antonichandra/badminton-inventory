@@ -69,9 +69,10 @@ export function ResponsiveFilterBar(props: ResponsiveFilterBarProps) {
           onClick={() => setSheetOpen(true)}
           className={cn(
             "group w-full rounded-2xl border bg-white p-3.5 text-left shadow-sm transition-all duration-200 active:scale-[0.99]",
+            "dark:border-slate-800 dark:bg-slate-900 dark:shadow-none",
             hasActiveFilters
-              ? "border-emerald-200/80 ring-1 ring-emerald-100/80 dark:border-emerald-900/50 dark:ring-emerald-950/40"
-              : "border-slate-200/90 ring-1 ring-slate-100 hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:ring-slate-800/80 dark:hover:border-slate-700",
+              ? "border-emerald-200/80 ring-1 ring-emerald-100/80 dark:border-emerald-800/60 dark:ring-emerald-950/50"
+              : "border-slate-200/90 ring-1 ring-slate-100 hover:border-slate-300 hover:shadow-md dark:ring-slate-800/80 dark:hover:border-slate-700",
           )}
         >
           <div className="flex items-center gap-3">
@@ -122,7 +123,7 @@ export function ResponsiveFilterBar(props: ResponsiveFilterBarProps) {
               )}
             </div>
 
-            <ChevronRight className="h-5 w-5 shrink-0 text-slate-300 transition-transform duration-200 group-hover:translate-x-0.5 group-active:translate-x-0 dark:text-slate-600" />
+            <ChevronRight className="h-5 w-5 shrink-0 text-slate-300 transition-transform duration-200 group-hover:translate-x-0.5 group-active:translate-x-0 dark:text-slate-500" />
           </div>
         </button>
 

@@ -9,8 +9,10 @@ export const nav = {
     menuKasir: "Kasir",
     menuMaster: "Master",
     menuProduk: "Produk",
+    menuSupplier: "Supplier",
     menuRole: "Role",
     menuAkun: "Users",
+    menuAnalytics: "Analitik",
   },
   EN: {
     navDashboard: "Dashboard",
@@ -22,7 +24,9 @@ export const nav = {
     menuKasir: "Cashier",
     menuMaster: "Master",
     menuProduk: "Products",
+    menuSupplier: "Suppliers",
     menuRole: "Roles",
     menuAkun: "Users",
+    menuAnalytics: "Analytics",
   },
 } as const;

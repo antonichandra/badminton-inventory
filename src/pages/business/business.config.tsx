@@ -111,6 +111,7 @@ export function buildBusinessTableColumns(
   options: {
     showOwnerColumn: boolean;
     isSuperAdmin: boolean;
+    formatSportName: (slug: string, fallbackName?: string) => string;
   },
   actions?: {
     onSetDefault: (row: BusinessRow) => void;
@@ -142,14 +143,18 @@ export function buildBusinessTableColumns(
       type: "custom",
       key: "sport",
       label: labels.sport,
-      render: (row) => (
-        <div className="flex items-center gap-2">
-          <SportBadge slug={row.sportSlug} name={row.sportName} />
-          <span className="text-sm text-slate-700 dark:text-slate-300">
-            {row.sportName}
-          </span>
-        </div>
-      ),
+      render: (row) => {
+        const sportLabel = options.formatSportName(row.sportSlug, row.sportName);
+
+        return (
+          <div className="flex items-center gap-2">
+            <SportBadge slug={row.sportSlug} name={sportLabel} />
+            <span className="text-sm text-slate-700 dark:text-slate-300">
+              {sportLabel}
+            </span>
+          </div>
+        );
+      },
     },
     {
       type: "display",
@@ -214,6 +219,17 @@ export function buildBusinessTableColumns(
 
       return (
         <div className="flex justify-end gap-1">
+          {canSetDefault && (
+            <IconButton
+              variant="default"
+              tooltip={labels.setDefault}
+              tooltipPlacement="left"
+              disabled={actions.actingBusinessId !== null}
+              onClick={() => actions.onSetDefault(row)}
+              icon={<Star className="h-4 w-4" />}
+            />
+          )}
+
           {canEdit && (
             <Link to={`/business/${row._id}/edit`} viewTransition>
               <IconButton
@@ -225,16 +241,6 @@ export function buildBusinessTableColumns(
             </Link>
           )}
 
-          {canSetDefault && (
-            <IconButton
-              variant="default"
-              tooltip={labels.setDefault}
-              tooltipPlacement="left"
-              disabled={actions.actingBusinessId !== null}
-              onClick={() => actions.onSetDefault(row)}
-              icon={<Star className="h-4 w-4" />}
-            />
-          )}
 
           {canRequestDelete && (
             <IconButton

@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 
-export type SelectOptionVariant = "sport" | "plan" | "business";
+export type SelectOptionVariant = "sport" | "plan" | "business" | "user";
 
 export interface SelectOption {
   value: string;
   label: string;
   disabled?: boolean;
   description?: string;
+  email?: string;
+  picture?: string;
   sportSlug?: string;
   planName?: string;
   variant?: SelectOptionVariant;

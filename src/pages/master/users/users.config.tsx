@@ -1,9 +1,11 @@
 import { CheckCircle2, Crown, Loader2, RotateCcw, Trash2, UserCog, XCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 import type { FilterFieldConfig } from "../../../core/components/filters/types";
 import type { SelectOption } from "../../../core/components/forms/types";
 import type { TableColumnConfig, BadgeVariant } from "../../../core/components/table/types";
 import { PlanBadge } from "../../../core/components/PlanBadge";
 import { SportBadge } from "../../../core/components/SportBadge";
+import { UserAvatar } from "../../../core/components/UserAvatar";
 import { Badge } from "../../../core/components/table/Badge";
 import { IconButton } from "../../../core/components/ui/IconButton";
 import type { UserStatusKey } from "../../../core/i18n/statuses";
@@ -196,6 +198,7 @@ export function buildUsersTableColumns(
     isSuperAdmin: boolean;
     currentUserId?: Id<"users">;
     formatUserStatus: (status: MasterUserRow["status"]) => string;
+    formatSportName: (slug: string, fallbackName?: string) => string;
   },
   actions?: {
     onApproveRequest: (row: MasterUserRow) => void;
@@ -214,17 +217,7 @@ export function buildUsersTableColumns(
       label: labels.name,
       render: (row) => (
         <div className="flex items-center gap-3">
-          {row.picture ? (
-            <img
-              src={row.picture}
-              alt={row.name}
-              className="h-9 w-9 shrink-0 rounded-full ring-1 ring-slate-200 dark:ring-slate-700"
-            />
-          ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
-              {row.name.charAt(0).toUpperCase()}
-            </div>
-          )}
+          <UserAvatar name={row.name} picture={row.picture} size="md" />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
               {row.name}
@@ -283,20 +276,28 @@ export function buildUsersTableColumns(
             <span className="text-sm text-slate-400">{labels.noBusiness}</span>
           ) : (
             row.businesses.map((business) => (
-              <div
+              <Link
                 key={business.businessId}
-                className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/50"
+                to={`/business/${business.businessId}/edit`}
+                viewTransition
+                className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 transition-colors hover:border-emerald-300 hover:bg-emerald-50 dark:border-slate-700 dark:bg-slate-800/50 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/30"
               >
                 <SportBadge
                   slug={business.sportSlug}
-                  name={business.sportName}
+                  name={options.formatSportName(
+                    business.sportSlug,
+                    business.sportName,
+                  )}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-200">
                     {business.businessName}
                   </p>
                   <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                    {business.sportName}
+                    {options.formatSportName(
+                      business.sportSlug,
+                      business.sportName,
+                    )}
                     {business.pendingInvitation && (
                       <span className="ml-1.5 text-amber-600 dark:text-amber-400">
                         · {labels.pendingInvite}
@@ -304,7 +305,7 @@ export function buildUsersTableColumns(
                     )}
                   </p>
                 </div>
-              </div>
+              </Link>
             ))
           )}
         </div>
