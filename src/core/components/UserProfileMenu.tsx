@@ -9,6 +9,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
 import { navigateWithTransition } from "../utils/viewTransition";
 import { PlanBadge } from "./PlanBadge";
+import { UserAvatar } from "./UserAvatar";
 
 export function UserProfileMenu() {
   const navigate = useNavigate();
@@ -56,17 +57,12 @@ export function UserProfileMenu() {
         className="flex items-center gap-2 rounded-lg px-1 py-1 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 sm:px-1.5"
         aria-label={translate("navProfile")}
       >
-        {user?.picture ? (
-          <img
-            src={user.picture}
-            alt={user.name}
-            className="h-8 w-8 rounded-full ring-2 ring-emerald-500/20"
-          />
-        ) : (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">
-            {user?.name?.charAt(0).toUpperCase()}
-          </div>
-        )}
+        <UserAvatar
+          name={user?.name ?? ""}
+          picture={user?.picture}
+          size="sm"
+          className="ring-2 ring-emerald-500/20"
+        />
         <div className="hidden text-left md:block">
           <p className="max-w-[140px] truncate text-sm font-medium text-slate-900 lg:max-w-none dark:text-white">
             {user?.name}

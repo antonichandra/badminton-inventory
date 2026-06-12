@@ -1,0 +1,367 @@
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { Doc, Id } from "../_generated/dataModel";
+
+export function calculateLineTotal(
+  product: Doc<"products">,
+  qty: number,
+  rentalHours?: number,
+): { unitPrice: number; lineTotal: number } {
+  if (product.type === "RENTAL") {
+    const hours = rentalHours ?? 0;
+    const unitPrice = product.rentalPricePerHour ?? 0;
+    return { unitPrice, lineTotal: unitPrice * hours };
+  }
+
+  return { unitPrice: product.sellPrice, lineTotal: product.sellPrice * qty };
+}
+
+export async function getOpenShiftForBusiness(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+) {
+  return ctx.db
+    .query("shifts")
+    .withIndex("by_business_and_status", (q) =>
+      q.eq("businessId", businessId).eq("status", "OPEN"),
+    )
+    .first();
+}
+
+export async function sumStockMovementsByProduct(
+  ctx: QueryCtx | MutationCtx,
+  shiftId: Id<"shifts">,
+  productId: Id<"products">,
+  type: Doc<"stockMovements">["type"],
+) {
+  const movements = await ctx.db
+    .query("stockMovements")
+    .withIndex("by_shift_and_product", (q) =>
+      q.eq("shiftId", shiftId).eq("productId", productId),
+    )
+    .collect();
+
+  return movements
+    .filter((movement) => movement.type === type)
+    .reduce((sum, movement) => sum + movement.qty, 0);
+}
+
+export async function getShiftStockReconciliation(
+  ctx: QueryCtx | MutationCtx,
+  shiftId: Id<"shifts">,
+) {
+  const snapshots = await ctx.db
+    .query("shiftStockSnapshots")
+    .withIndex("by_shiftId", (q) => q.eq("shiftId", shiftId))
+    .collect();
+
+  const saleLines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_shiftId", (q) => q.eq("shiftId", shiftId))
+    .collect();
+
+  const paidQtyByProduct = new Map<string, number>();
+  for (const line of saleLines) {
+    if (line.paymentStatus !== "PAID") continue;
+    const product = await ctx.db.get(line.productId);
+    if (product?.type !== "RETAIL") continue;
+    const key = line.productId;
+    paidQtyByProduct.set(key, (paidQtyByProduct.get(key) ?? 0) + line.qty);
+  }
+
+  const results = [];
+  for (const snapshot of snapshots) {
+    const product = await ctx.db.get(snapshot.productId);
+    if (!product) continue;
+
+    const received = await sumStockMovementsByProduct(
+      ctx,
+      shiftId,
+      snapshot.productId,
+      "RECEIPT",
+    );
+    const writeOff = await sumStockMovementsByProduct(
+      ctx,
+      shiftId,
+      snapshot.productId,
+      "WRITEOFF",
+    );
+    const closingQty = snapshot.closingQty ?? 0;
+    const soldQtyFromStock =
+      snapshot.openingQty + received - closingQty - writeOff;
+    const soldQtyFromLines = paidQtyByProduct.get(snapshot.productId) ?? 0;
+
+    results.push({
+      productId: snapshot.productId,
+      productName: product.name,
+      openingQty: snapshot.openingQty,
+      receivedQty: received,
+      writeOffQty: writeOff,
+      closingQty,
+      soldQtyFromStock,
+      soldQtyFromLines,
+      qtyVariance: soldQtyFromStock - soldQtyFromLines,
+    });
+  }
+
+  return results;
+}
+
+export async function getShiftSalesByPriceTier(
+  ctx: QueryCtx | MutationCtx,
+  shiftId: Id<"shifts">,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_shiftId", (q) => q.eq("shiftId", shiftId))
+    .collect();
+
+  const tierMap = new Map<
+    string,
+    {
+      productId: Id<"products">;
+      productName: string;
+      unitPrice: number;
+      qty: number;
+      revenue: number;
+    }
+  >();
+
+  for (const line of lines) {
+    if (line.paymentStatus !== "PAID") continue;
+    const product = await ctx.db.get(line.productId);
+    const key = `${line.productId}:${line.unitPrice}`;
+    const existing = tierMap.get(key);
+    if (existing) {
+      existing.qty += line.qty;
+      existing.revenue += line.lineTotal;
+    } else {
+      tierMap.set(key, {
+        productId: line.productId,
+        productName: product?.name ?? "—",
+        unitPrice: line.unitPrice,
+        qty: line.qty,
+        revenue: line.lineTotal,
+      });
+    }
+  }
+
+  return Array.from(tierMap.values()).sort((a, b) =>
+    a.productName.localeCompare(b.productName),
+  );
+}
+
+export async function getShiftSalesStats(
+  ctx: QueryCtx | MutationCtx,
+  shiftId: Id<"shifts">,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_shiftId", (q) => q.eq("shiftId", shiftId))
+    .collect();
+
+  let paidRevenue = 0;
+  let unpaidRevenue = 0;
+  let totalCogs = 0;
+  const productMap = new Map<
+    string,
+    { productId: Id<"products">; productName: string; qty: number; revenue: number }
+  >();
+
+  for (const line of lines) {
+    const product = await ctx.db.get(line.productId);
+    if (line.paymentStatus === "PAID") {
+      paidRevenue += line.lineTotal;
+      totalCogs += line.cogsTotal ?? 0;
+      const key = line.productId;
+      const existing = productMap.get(key);
+      if (existing) {
+        existing.qty += line.qty;
+        existing.revenue += line.lineTotal;
+      } else {
+        productMap.set(key, {
+          productId: line.productId,
+          productName: product?.name ?? "—",
+          qty: line.qty,
+          revenue: line.lineTotal,
+        });
+      }
+    } else {
+      unpaidRevenue += line.lineTotal;
+    }
+  }
+
+  const topProducts = Array.from(productMap.values())
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10);
+
+  return {
+    paidRevenue,
+    unpaidRevenue,
+    totalCogs,
+    grossProfit: paidRevenue - totalCogs,
+    topProducts,
+    salesByPriceTier: await getShiftSalesByPriceTier(ctx, shiftId),
+  };
+}
+
+/** @deprecated Use getShiftStockReconciliation + getShiftSalesStats */
+export async function getShiftStockSummary(
+  ctx: QueryCtx | MutationCtx,
+  shiftId: Id<"shifts">,
+) {
+  const recon = await getShiftStockReconciliation(ctx, shiftId);
+  const tiers = await getShiftSalesByPriceTier(ctx, shiftId);
+
+  const revenueByProduct = new Map<string, number>();
+  for (const tier of tiers) {
+    revenueByProduct.set(
+      tier.productId,
+      (revenueByProduct.get(tier.productId) ?? 0) + tier.revenue,
+    );
+  }
+
+  return recon.map((item) => ({
+    productId: item.productId,
+    productName: item.productName,
+    openingQty: item.openingQty,
+    receivedQty: item.receivedQty,
+    writeOffQty: item.writeOffQty,
+    closingQty: item.closingQty,
+    soldQty: item.soldQtyFromLines,
+    revenue: revenueByProduct.get(item.productId) ?? 0,
+  }));
+}
+
+export async function getShiftCashSummary(
+  ctx: QueryCtx | MutationCtx,
+  shift: Doc<"shifts">,
+) {
+  const saleLines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_shiftId", (q) => q.eq("shiftId", shift._id))
+    .collect();
+
+  const paidLines = saleLines.filter((line) => line.paymentStatus === "PAID");
+  const cashSales = paidLines
+    .filter((line) => line.paymentMethod === "CASH")
+    .reduce((sum, line) => sum + line.lineTotal, 0);
+  const qrisSales = paidLines
+    .filter((line) => line.paymentMethod === "QRIS")
+    .reduce((sum, line) => sum + line.lineTotal, 0);
+
+  const cashEntries = await ctx.db
+    .query("cashEntries")
+    .withIndex("by_shiftId", (q) => q.eq("shiftId", shift._id))
+    .collect();
+
+  const expenses = cashEntries
+    .filter((entry) => entry.type === "EXPENSE")
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  const deposits = cashEntries
+    .filter((entry) => entry.type === "DEPOSIT")
+    .reduce((sum, entry) => sum + entry.amount, 0);
+
+  const expectedCash =
+    shift.openingCash + cashSales - expenses - deposits;
+  const actualCash = shift.closingCash ?? 0;
+  const actualQris = shift.closingQris ?? 0;
+  const expectedTotal = expectedCash + qrisSales;
+  const actualTotal = actualCash + actualQris;
+  const variance = actualTotal - expectedTotal;
+
+  return {
+    openingCash: shift.openingCash,
+    cashSales,
+    qrisSales,
+    expenses,
+    deposits,
+    expectedCash,
+    expectedTotal,
+    actualCash,
+    actualQris,
+    actualTotal,
+    variance,
+  };
+}
+
+export function generatePaymentBatchId(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function formatDateKey(timestamp: number): string {
+  const d = new Date(timestamp);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export type ShiftAssignee = {
+  _id: Id<"users">;
+  name: string;
+  email: string;
+  businessRole: "STAFF" | "OWNER";
+};
+
+export async function resolveShiftAssignees(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+): Promise<ShiftAssignee[]> {
+  const business = await ctx.db.get(businessId);
+  if (!business) return [];
+
+  const memberships = await ctx.db
+    .query("businessMembers")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const staffAssignees: ShiftAssignee[] = [];
+  for (const membership of memberships) {
+    if (membership.role !== "STAFF") continue;
+    const member = await ctx.db.get(membership.userId);
+    if (!member || member.status !== "APPROVED") continue;
+    staffAssignees.push({
+      _id: member._id,
+      name: member.name,
+      email: member.email,
+      businessRole: "STAFF",
+    });
+  }
+
+  if (staffAssignees.length > 0) {
+    return staffAssignees.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const ownerIds = new Set<Id<"users">>();
+  ownerIds.add(business.ownerId);
+  for (const membership of memberships) {
+    if (membership.role === "OWNER") {
+      ownerIds.add(membership.userId);
+    }
+  }
+
+  const ownerAssignees: ShiftAssignee[] = [];
+  for (const ownerId of ownerIds) {
+    const owner = await ctx.db.get(ownerId);
+    if (!owner || owner.status !== "APPROVED") continue;
+    ownerAssignees.push({
+      _id: owner._id,
+      name: owner.name,
+      email: owner.email,
+      businessRole: "OWNER",
+    });
+  }
+
+  return ownerAssignees.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function isValidShiftAssignee(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  userId: Id<"users">,
+): Promise<boolean> {
+  const assignees = await resolveShiftAssignees(ctx, businessId);
+  return assignees.some((assignee) => assignee._id === userId);
+}

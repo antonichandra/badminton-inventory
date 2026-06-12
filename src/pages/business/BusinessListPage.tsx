@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { AdminListStats } from "../../core/components/AdminListStats";
 import { PageHeader } from "../../core/components/PageHeader";
+import { PageTopSection } from "../../core/components/PageTopSection";
 import { PermissionGuard } from "../../core/components/PermissionGuard";
 import { ResponsiveFilterBar } from "../../core/components/filters/ResponsiveFilterBar";
 import { DataTable } from "../../core/components/table/DataTable";
@@ -20,6 +21,10 @@ import {
   buildBusinessTableColumns,
   type BusinessRow,
 } from "./business.config";
+import {
+  mapSportSelectOptions,
+  translateSportName,
+} from "../../core/i18n/sports";
 import { buildBusinessStatusOptions } from "../../core/i18n/statuses";
 import { QuotaHeader } from "./components/QuotaHeader";
 
@@ -87,6 +92,12 @@ export function BusinessListPage() {
   } = useFilterState(filterFields);
 
   const sportOptions = useQuery(api.sports.listSports);
+
+  const translatedSportOptions = useMemo(
+    () => mapSportSelectOptions(sportOptions ?? [], translate),
+    [sportOptions, translate],
+  );
+
   const quota = useQuery(
     api.businesses.getQuotaSummary,
     sessionToken ? { sessionToken } : "skip",
@@ -214,7 +225,12 @@ export function BusinessListPage() {
           cancelDelete: translate("businessCancelDelete"),
           noPhone: translate("placeholderEmpty"),
         },
-        { showOwnerColumn: isSuperAdmin, isSuperAdmin },
+        {
+          showOwnerColumn: isSuperAdmin,
+          isSuperAdmin,
+          formatSportName: (slug, fallbackName) =>
+            translateSportName(translate, slug, fallbackName),
+        },
         {
           onSetDefault: (row) => setConfirmState({ action: "setDefault", business: row }),
           onRequestDelete: (row) =>
@@ -304,24 +320,25 @@ export function BusinessListPage() {
   
   return (
     <PermissionGuard permissions={["business", "master_business"]}>
-      <div className="flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
+      <PageTopSection>
         <PageHeader
+          embedded
           title={translate("pageBusinessTitle")}
           subtitle={translate("pageBusinessSubtitle")}
         />
         {canAddBusiness && !isSuperAdmin && (
-          <Link to="/business/new" viewTransition>
+          <Link to="/business/new" viewTransition className="w-full sm:w-auto">
             <Button
               variant="secondary"
               size="md"
-              className="shrink-0"
+              className="w-full shrink-0 sm:w-auto"
               leftIcon={<Plus className="h-4 w-4" />}
             >
               {translate("businessAddButton")}
             </Button>
           </Link>
         )}
-      </div>
+      </PageTopSection>
 
       {isSuperAdmin && (
         <AdminListStats
@@ -354,7 +371,7 @@ export function BusinessListPage() {
           onApply={applyFilters}
           onReset={resetFilters}
           optionMap={{
-            sports: sportOptions ?? [],
+            sports: translatedSportOptions,
           }}
           applyLabel={translate("filterApply")}
           resetLabel={translate("filterReset")}

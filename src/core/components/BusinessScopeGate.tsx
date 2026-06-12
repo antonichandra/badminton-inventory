@@ -1,0 +1,32 @@
+import type { ReactNode } from "react";
+import { useBusiness } from "../context/BusinessContext";
+import { useLanguage } from "../context/LanguageContext";
+
+interface BusinessScopeGateProps {
+  children: ReactNode;
+}
+
+export function BusinessScopeGate({ children }: BusinessScopeGateProps) {
+  const { translate } = useLanguage();
+  const { activeBusinessId, isLoading } = useBusiness();
+
+  if (isLoading) {
+    return (
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        {translate("loading")}
+      </p>
+    );
+  }
+
+  if (!activeBusinessId) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
+        <p className="text-slate-500 dark:text-slate-400">
+          {translate("kasirNoBusiness")}
+        </p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}

@@ -39,6 +39,68 @@ export const businessStatus = v.union(
   v.literal("DELETE_REQUESTED"),
 );
 
+export const productType = v.union(v.literal("RETAIL"), v.literal("RENTAL"));
+
+export const shiftStatus = v.union(v.literal("OPEN"), v.literal("CLOSED"));
+
+export const shiftArchiveStatus = v.union(
+  v.literal("ACTIVE"),
+  v.literal("ARCHIVED"),
+);
+
+export const paymentStatus = v.union(v.literal("UNPAID"), v.literal("PAID"));
+
+export const supplierPaymentStatus = v.union(
+  v.literal("UNPAID"),
+  v.literal("PAID"),
+);
+
+export const paymentMethod = v.union(v.literal("CASH"), v.literal("QRIS"));
+
+export const cashEntryType = v.union(v.literal("EXPENSE"), v.literal("DEPOSIT"));
+
+export const stockMovementType = v.union(
+  v.literal("SALE"),
+  v.literal("RECEIPT"),
+  v.literal("WRITEOFF"),
+  v.literal("OPENING"),
+  v.literal("CLOSE_COUNT"),
+);
+
+const priceTierEntry = v.object({
+  productId: v.id("products"),
+  productName: v.string(),
+  unitPrice: v.number(),
+  qty: v.number(),
+  revenue: v.number(),
+});
+
+const topProductEntry = v.object({
+  productId: v.id("products"),
+  productName: v.string(),
+  qty: v.number(),
+  revenue: v.number(),
+});
+
+const stockReconEntry = v.object({
+  productId: v.id("products"),
+  productName: v.string(),
+  openingQty: v.number(),
+  receivedQty: v.number(),
+  soldQtyFromLines: v.number(),
+  soldQtyFromStock: v.number(),
+  closingQty: v.number(),
+  writeOffQty: v.number(),
+  qtyVariance: v.number(),
+});
+
+const rollupProductEntry = v.object({
+  productId: v.id("products"),
+  qty: v.number(),
+  revenue: v.number(),
+  cogs: v.number(),
+});
+
 export default defineSchema({
   roles: defineTable({
     name: v.string(),
@@ -140,4 +202,221 @@ export default defineSchema({
   })
     .index("by_token", ["token"])
     .index("by_userId", ["userId"]),
+
+  products: defineTable({
+    businessId: v.id("businesses"),
+    name: v.string(),
+    type: productType,
+    sellPrice: v.number(),
+    rentalPricePerHour: v.optional(v.number()),
+    unit: v.string(),
+    trackExpiry: v.optional(v.boolean()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_businessId", ["businessId"])
+    .index("by_business_and_name", ["businessId", "name"]),
+
+  sellPriceHistory: defineTable({
+    productId: v.id("products"),
+    businessId: v.id("businesses"),
+    price: v.number(),
+    effectiveAt: v.number(),
+    changedBy: v.id("users"),
+  })
+    .index("by_productId", ["productId"])
+    .index("by_businessId", ["businessId"]),
+
+  suppliers: defineTable({
+    businessId: v.id("businesses"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    contact: v.optional(v.string()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_businessId", ["businessId"])
+    .index("by_business_and_name", ["businessId", "name"]),
+
+  shifts: defineTable({
+    businessId: v.id("businesses"),
+    status: shiftStatus,
+    openedBy: v.id("users"),
+    assignedStaffId: v.optional(v.id("users")),
+    closedBy: v.optional(v.id("users")),
+    openedAt: v.number(),
+    closedAt: v.optional(v.number()),
+    openingCash: v.number(),
+    closingCash: v.optional(v.number()),
+    closingQris: v.optional(v.number()),
+    archiveStatus: v.optional(shiftArchiveStatus),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_businessId", ["businessId"])
+    .index("by_business_and_status", ["businessId", "status"]),
+
+  shiftStockSnapshots: defineTable({
+    shiftId: v.id("shifts"),
+    productId: v.id("products"),
+    openingQty: v.number(),
+    closingQty: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_shift_and_product", ["shiftId", "productId"]),
+
+  saleLines: defineTable({
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    productId: v.id("products"),
+    groupLabel: v.optional(v.string()),
+    customerNote: v.optional(v.string()),
+    rentalDescription: v.optional(v.string()),
+    qty: v.number(),
+    rentalHours: v.optional(v.number()),
+    unitPrice: v.number(),
+    lineTotal: v.number(),
+    cogsTotal: v.optional(v.number()),
+    paymentStatus: paymentStatus,
+    paymentMethod: v.optional(paymentMethod),
+    paymentBatchId: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    recordedBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_businessId", ["businessId"])
+    .index("by_paymentBatchId", ["paymentBatchId"]),
+
+  paymentBatches: defineTable({
+    batchId: v.string(),
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    paymentMethod: paymentMethod,
+    total: v.number(),
+    amountReceived: v.optional(v.number()),
+    changeAmount: v.optional(v.number()),
+    paidAt: v.number(),
+    recordedBy: v.id("users"),
+  })
+    .index("by_batchId", ["batchId"])
+    .index("by_shiftId", ["shiftId"]),
+
+  cashEntries: defineTable({
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    type: cashEntryType,
+    amount: v.number(),
+    note: v.string(),
+    recordedBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_businessId", ["businessId"]),
+
+  stockMovements: defineTable({
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    productId: v.id("products"),
+    type: stockMovementType,
+    qty: v.number(),
+    note: v.optional(v.string()),
+    refId: v.optional(v.string()),
+    recordedBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_business_and_product", ["businessId", "productId"])
+    .index("by_shift_and_product", ["shiftId", "productId"]),
+
+  stockReceipts: defineTable({
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    supplierId: v.id("suppliers"),
+    note: v.optional(v.string()),
+    totalAmount: v.optional(v.number()),
+    dueAt: v.optional(v.number()),
+    supplierPaymentStatus: v.optional(supplierPaymentStatus),
+    paidAt: v.optional(v.number()),
+    markedPaidBy: v.optional(v.id("users")),
+    recordedBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_businessId", ["businessId"])
+    .index("by_business_and_paymentStatus", [
+      "businessId",
+      "supplierPaymentStatus",
+    ]),
+
+  stockReceiptItems: defineTable({
+    receiptId: v.id("stockReceipts"),
+    businessId: v.id("businesses"),
+    productId: v.id("products"),
+    supplierId: v.id("suppliers"),
+    qty: v.number(),
+    qtyRemaining: v.number(),
+    unitCost: v.number(),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_receiptId", ["receiptId"])
+    .index("by_businessId", ["businessId"])
+    .index("by_business_and_product", ["businessId", "productId"]),
+
+  supplierCostHistory: defineTable({
+    productId: v.id("products"),
+    businessId: v.id("businesses"),
+    supplierId: v.id("suppliers"),
+    unitCost: v.number(),
+    qty: v.number(),
+    receiptId: v.id("stockReceipts"),
+    effectiveAt: v.number(),
+  })
+    .index("by_productId", ["productId"])
+    .index("by_businessId", ["businessId"]),
+
+  saleLineCostLots: defineTable({
+    saleLineId: v.id("saleLines"),
+    receiptItemId: v.id("stockReceiptItems"),
+    qty: v.number(),
+    unitCost: v.number(),
+  }).index("by_saleLineId", ["saleLineId"]),
+
+  shiftSummaries: defineTable({
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    closedAt: v.number(),
+    totalRevenue: v.number(),
+    totalCogs: v.number(),
+    grossProfit: v.number(),
+    cashSales: v.number(),
+    qrisSales: v.number(),
+    expenses: v.number(),
+    deposits: v.number(),
+    variance: v.number(),
+    salesByPriceTier: v.array(priceTierEntry),
+    topProducts: v.array(topProductEntry),
+    stockReconciliation: v.array(stockReconEntry),
+    createdAt: v.number(),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_businessId", ["businessId"]),
+
+  businessDailyRollups: defineTable({
+    businessId: v.id("businesses"),
+    date: v.string(),
+    totalRevenue: v.number(),
+    totalCogs: v.number(),
+    grossProfit: v.number(),
+    byProduct: v.array(rollupProductEntry),
+    updatedAt: v.number(),
+  })
+    .index("by_businessId", ["businessId"])
+    .index("by_business_and_date", ["businessId", "date"]),
 });

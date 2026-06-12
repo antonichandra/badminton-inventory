@@ -15,6 +15,7 @@ export const common = {
     themeDark: "Gelap",
     languageID: "Indonesia",
     languageEN: "English",
+    unexpectedError: "Terjadi kesalahan. Silakan coba lagi.",
     unexpectedErrorTitle: "Terjadi Kesalahan",
     unexpectedErrorDescription:
       "Maaf, terjadi kesalahan yang tidak terduga. Silakan kembali ke menu utama dan coba lagi.",
@@ -43,6 +44,7 @@ export const common = {
     themeDark: "Dark",
     languageID: "Indonesia",
     languageEN: "English",
+    unexpectedError: "Something went wrong. Please try again.",
     unexpectedErrorTitle: "Something Went Wrong",
     unexpectedErrorDescription:
       "Sorry, an unexpected error occurred. Please return to the main menu and try again.",

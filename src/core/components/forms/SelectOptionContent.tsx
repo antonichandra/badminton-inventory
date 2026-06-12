@@ -1,5 +1,6 @@
 import { PlanBadge } from "../PlanBadge";
 import { SportBadge } from "../SportBadge";
+import { UserInfoRow } from "../UserInfoRow";
 import { cn } from "../../utils/cn";
 import type { SelectOption } from "./types";
 
@@ -36,7 +37,19 @@ export function SelectOptionContent({
     );
   }
 
-  if (option.description || option.variant === "business") {
+  if (option.variant === "user") {
+    return (
+      <UserInfoRow
+        name={option.label}
+        email={option.email}
+        picture={option.picture}
+        size={compact ? "sm" : "md"}
+        className={className}
+      />
+    );
+  }
+
+  if (option.description || option.email || option.variant === "business") {
     return (
       <div className={cn("min-w-0", className)}>
         <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
@@ -45,6 +58,11 @@ export function SelectOptionContent({
         {option.description && (
           <p className="truncate text-xs text-slate-500 dark:text-slate-400">
             {option.description}
+          </p>
+        )}
+        {option.email && (
+          <p className="truncate text-xs text-slate-400 dark:text-slate-500">
+            {option.email}
           </p>
         )}
       </div>
@@ -60,7 +78,8 @@ export function optionMatchesSearch(option: SelectOption, term: string): boolean
   const normalized = term.toLowerCase();
   return (
     option.label.toLowerCase().includes(normalized) ||
-    (option.description?.toLowerCase().includes(normalized) ?? false)
+    (option.description?.toLowerCase().includes(normalized) ?? false) ||
+    (option.email?.toLowerCase().includes(normalized) ?? false)
   );
 }
 
@@ -69,6 +88,8 @@ export function isRichSelectOption(option: SelectOption): boolean {
     option.sportSlug ||
       option.planName !== undefined ||
       option.variant ||
-      option.description,
+      option.description ||
+      option.email ||
+      option.picture,
   );
 }

@@ -17,6 +17,10 @@ import {
   countStaffForOwner,
   getActivePlanForUser,
 } from "./lib/planHelpers";
+import {
+  getAccessibleBusinesses,
+  resolveActiveBusinessId,
+} from "./lib/businessContext";
 
 async function getBusinessOrThrow(
   ctx: Parameters<typeof getAuthenticatedUser>[0],
@@ -79,25 +83,6 @@ async function resolveDefaultBusinessId(
   }
 
   return owned[0]._id;
-}
-
-async function resolveActiveBusinessId(
-  ctx: Parameters<typeof getAuthenticatedUser>[0],
-  user: Doc<"users">,
-): Promise<Id<"businesses"> | null> {
-  const owned = await getOwnedBusinesses(ctx, user._id);
-  if (owned.length === 0) {
-    return null;
-  }
-
-  if (
-    user.activeBusinessId &&
-    owned.some((business) => business._id === user.activeBusinessId)
-  ) {
-    return user.activeBusinessId;
-  }
-
-  return resolveDefaultBusinessId(ctx, user);
 }
 
 function mapBusinessRow(
@@ -166,29 +151,46 @@ export const listBusinessOptions = query({
 export const getSwitcherContext = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    try {
+      const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+      const accessible = await getAccessibleBusinesses(ctx, user, role);
+      if (accessible.length === 0) {
+        return {
+          businesses: [],
+          activeBusinessId: null,
+          defaultBusinessId: null,
+        };
+      }
 
-    if (!canManageOwnBusinesses(role) && !isSuperAdmin(role)) {
+      const defaultBusinessId =
+        canManageOwnBusinesses(role) || isSuperAdmin(role)
+          ? await resolveDefaultBusinessId(ctx, user)
+          : user.defaultBusinessId &&
+              accessible.some(
+                (business) => business._id === user.defaultBusinessId,
+              )
+            ? user.defaultBusinessId
+            : accessible[0]._id;
+
+      const activeBusinessId = await resolveActiveBusinessId(ctx, user, role);
+
+      return {
+        businesses: accessible.map((business) => ({
+          _id: business._id,
+          name: business.name,
+          isDefault: business._id === defaultBusinessId,
+        })),
+        activeBusinessId,
+        defaultBusinessId,
+      };
+    } catch (error) {
+      console.error("getSwitcherContext failed:", error);
       return {
         businesses: [],
         activeBusinessId: null,
         defaultBusinessId: null,
       };
     }
-
-    const owned = await getOwnedBusinesses(ctx, user._id);
-    const defaultBusinessId = await resolveDefaultBusinessId(ctx, user);
-    const activeBusinessId = await resolveActiveBusinessId(ctx, user);
-
-    return {
-      businesses: owned.map((business) => ({
-        _id: business._id,
-        name: business.name,
-        isDefault: business._id === defaultBusinessId,
-      })),
-      activeBusinessId,
-      defaultBusinessId,
-    };
   },
 });
 
@@ -395,21 +397,13 @@ export const createBusiness = mutation({
       });
     }
 
-    const userUpdates: {
-      defaultBusinessId?: Id<"businesses">;
-      activeBusinessId?: Id<"businesses">;
-      updatedAt: number;
-    } = { updatedAt: now };
-
-    if (!user.defaultBusinessId) {
-      userUpdates.defaultBusinessId = businessId;
-    }
-    if (!user.activeBusinessId) {
-      userUpdates.activeBusinessId = businessId;
-    }
-
-    if (userUpdates.defaultBusinessId || userUpdates.activeBusinessId) {
-      await ctx.db.patch(user._id, userUpdates);
+    // Only the first business becomes default/active — never override on later creates.
+    if (currentBusinessCount === 0) {
+      await ctx.db.patch(user._id, {
+        defaultBusinessId: businessId,
+        activeBusinessId: businessId,
+        updatedAt: now,
+      });
     }
 
     return { businessId };
@@ -465,12 +459,14 @@ export const setActiveBusiness = mutation({
     businessId: v.id("businesses"),
   },
   handler: async (ctx, args) => {
-    const { user } = await getAuthenticatedUser(ctx, args.sessionToken);
-    const business = await getBusinessOrThrow(ctx, args.businessId);
-
-    if (business.ownerId !== user._id) {
-      throw new Error("FORBIDDEN");
-    }
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    const { assertBusinessAccess } = await import("./lib/businessContext");
+    const business = await assertBusinessAccess(
+      ctx,
+      user,
+      role,
+      args.businessId,
+    );
 
     if (!isBusinessOperational(business)) {
       throw new Error("BUSINESS_NOT_ACTIVE");

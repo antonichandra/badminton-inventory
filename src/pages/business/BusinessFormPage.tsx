@@ -10,6 +10,7 @@ import { ConfirmModal } from "../../core/components/ui/ConfirmModal";
 import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
+import { mapSportSelectOptions } from "../../core/i18n/sports";
 import { translateStaffStatus } from "../../core/i18n/statuses";
 import { navigateWithTransition } from "../../core/utils/viewTransition";
 import { EditUserRoleModal } from "../master/users/EditUserRoleModal";
@@ -111,6 +112,11 @@ export function BusinessFormPage() {
       addressPlaceholder: translate("businessFieldAddressPlaceholder"),
     }),
     [translate],
+  );
+
+  const translatedSportOptions = useMemo(
+    () => mapSportSelectOptions(sportOptions ?? [], translate),
+    [sportOptions, translate],
   );
 
   const handleValuesChange = (next: BusinessFormValues) => {
@@ -379,7 +385,7 @@ export function BusinessFormPage() {
               values={values}
               errors={fieldErrors}
               onChange={handleValuesChange}
-              sportOptions={sportOptions ?? []}
+              sportOptions={translatedSportOptions}
               labels={formLabels}
               disabled={isSaving}
             />

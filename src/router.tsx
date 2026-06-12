@@ -6,11 +6,13 @@ import { WaitingApprovalPage } from "./pages/WaitingApproval";
 import { UnexpectedErrorPage } from "./pages/UnexpectedErrorPage";
 import { DashboardPage } from "./pages/Dashboard";
 import { ProdukPage } from "./pages/master/ProdukPage";
+import { SupplierPage } from "./pages/master/suppliers/SupplierPage";
 import { RolePage } from "./pages/master/RolePage";
 import { AkunPage } from "./pages/master/AkunPage";
 import { BusinessListPage } from "./pages/business/BusinessListPage";
 import { BusinessFormPage } from "./pages/business/BusinessFormPage";
 import { KasirPage } from "./pages/KasirPage";
+import { AnalyticsPage } from "./pages/AnalyticsPage";
 
 function RootLayout() {
   return (
@@ -44,7 +46,9 @@ export const router = createBrowserRouter([
           { path: "business/new", element: <BusinessFormPage /> },
           { path: "business/:businessId/edit", element: <BusinessFormPage /> },
           { path: "kasir", element: <KasirPage /> },
+          { path: "analytics", element: <AnalyticsPage /> },
           { path: "master/produk", element: <ProdukPage /> },
+          { path: "master/supplier", element: <SupplierPage /> },
           { path: "master/role", element: <RolePage /> },
           { path: "master/akun", element: <AkunPage /> },
         ],
