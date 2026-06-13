@@ -16,7 +16,6 @@ import {
 import {
   archiveShiftDetails,
   updateDailyRollups,
-  updateDailyRollupsFromShiftSummary,
 } from "./lib/shiftReportHelpers";
 import { getRoleById } from "./lib/authHelpers";
 import { parseGroupLabel } from "./lib/groupLabelHelpers";
@@ -41,7 +40,6 @@ import {
   generatePaymentBatchId,
   getOpenShiftForBusiness,
   getShiftCashSummary,
-  getShiftSalesByPriceTier,
   getShiftSalesStats,
   getShiftStockReconciliation,
   getShiftStockSummary,
