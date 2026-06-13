@@ -10,7 +10,7 @@ import {
   getShiftStockReconciliation,
   sumStockMovementsByProduct,
 } from "./shiftHelpers";
-import { updateDailyRollupsFromShiftSummary } from "./shiftReportHelpers";
+import { updateDailyRollupsFromShiftSummary, enforceShiftRetentionLimit } from "./shiftReportHelpers";
 
 export interface ClosingStockItem {
   productId: Id<"products">;
@@ -265,6 +265,8 @@ export async function finalizeShiftClose(
   }
 
   await updateDailyRollupsFromShiftSummary(ctx, shift.businessId, now);
+
+  await enforceShiftRetentionLimit(ctx, shift.businessId);
 
   return {
     summary: summaryData,

@@ -144,6 +144,7 @@ export function ProductFormModal({
               value={sellPrice}
               onChange={setSellPrice}
               min={0}
+              format="currency"
               required
             />
             <InputText
@@ -168,6 +169,7 @@ export function ProductFormModal({
             value={rentalPrice}
             onChange={setRentalPrice}
             min={0}
+            format="currency"
             required
           />
         )}

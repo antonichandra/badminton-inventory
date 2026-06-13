@@ -1,4 +1,5 @@
 import type { Id } from "../../../convex/_generated/dataModel";
+import { formatDateTime } from "../../core/utils/formatDate";
 
 export function normalizeGroupKey(label: string): string {
   return label.trim().toLowerCase();
@@ -81,20 +82,16 @@ export function getShiftAgeDays(openedAt: number): number {
   return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
+export function getShiftDurationDays(openedAt: number, closedAt: number): number {
+  const diff = closedAt - openedAt;
+  return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+
 export function formatShiftOpenedAt(
   openedAt: number,
   language: "ID" | "EN",
 ): string {
-  return new Date(openedAt).toLocaleString(
-    language === "ID" ? "id-ID" : "en-US",
-    {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    },
-  );
+  return formatDateTime(openedAt, language);
 }
 
 export interface SaleGroup {
@@ -189,9 +186,8 @@ export function formatLineDescription(line: SaleLineView): string {
   if (line.productType === "RENTAL") {
     const hours = line.rentalHours ?? 0;
     const desc = line.rentalDescription?.trim();
-    return desc
-      ? `${line.productName} · ${hours} jam · ${desc}`
-      : `${line.productName} · ${hours} jam`;
+    const base = `${line.productName} ×${line.qty} · ${hours} jam`;
+    return desc ? `${base} · ${desc}` : base;
   }
 
   return `${line.productName} ×${line.qty}`;

@@ -1,4 +1,4 @@
-import { Pencil } from "lucide-react";
+import { History, Pencil } from "lucide-react";
 import type { FilterFieldConfig } from "../../../core/components/filters/types";
 import type { TableColumnConfig } from "../../../core/components/table/types";
 import { Badge } from "../../../core/components/table/Badge";
@@ -39,6 +39,7 @@ interface ColumnLabels {
   active: string;
   inactive: string;
   edit: string;
+  priceHistory: string;
 }
 
 interface FilterLabels {
@@ -114,6 +115,7 @@ export function buildProductFilterFields(
 export function buildProductTableColumns(
   labels: ColumnLabels,
   onEdit: (row: ProductRow) => void,
+  onPriceHistory: (row: ProductRow) => void,
 ): TableColumnConfig<ProductRow>[] {
   return [
     {
@@ -207,7 +209,13 @@ export function buildProductTableColumns(
       headerClassName: "text-right",
       className: "text-right",
       render: (row) => (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-1">
+          <IconButton
+            tooltip={labels.priceHistory}
+            tooltipPlacement="left"
+            onClick={() => onPriceHistory(row)}
+            icon={<History className="h-4 w-4" />}
+          />
           <IconButton
             tooltip={labels.edit}
             tooltipPlacement="left"

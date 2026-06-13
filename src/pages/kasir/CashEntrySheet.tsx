@@ -86,6 +86,7 @@ export function CashEntrySheet({
           value={amount}
           onChange={setAmount}
           min={1}
+          format="currency"
           required
         />
         <Textarea

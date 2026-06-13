@@ -14,7 +14,6 @@ import {
   resolveScopedBusinessId,
 } from "./lib/businessContext";
 import {
-  archiveShiftDetails,
   updateDailyRollups,
 } from "./lib/shiftReportHelpers";
 import { getRoleById } from "./lib/authHelpers";
@@ -40,6 +39,7 @@ import {
   generatePaymentBatchId,
   getOpenShiftForBusiness,
   getShiftCashSummary,
+  getShiftSalesByPriceTier,
   getShiftSalesStats,
   getShiftStockReconciliation,
   getShiftStockSummary,
@@ -408,7 +408,6 @@ export const getShiftDetail = query({
     const closedByUser = shift.closedBy ? await ctx.db.get(shift.closedBy) : null;
 
     let stockReconciliation = saved?.stockReconciliation ?? [];
-    let salesByPriceTier = saved?.salesByPriceTier ?? [];
     let totalRevenue = saved?.totalRevenue ?? 0;
     let totalCogs = saved?.totalCogs ?? 0;
     let grossProfit = saved?.grossProfit ?? 0;
@@ -416,11 +415,12 @@ export const getShiftDetail = query({
     if (!saved) {
       const salesStats = await getShiftSalesStats(ctx, shift._id);
       stockReconciliation = await getShiftStockReconciliation(ctx, shift._id);
-      salesByPriceTier = salesStats.salesByPriceTier;
       totalRevenue = salesStats.paidRevenue;
       totalCogs = salesStats.totalCogs;
       grossProfit = salesStats.grossProfit;
     }
+
+    const salesByPriceTier = await getShiftSalesByPriceTier(ctx, shift._id);
 
     return {
       shift,
@@ -600,7 +600,14 @@ export const getShiftExportData = query({
       });
     }
 
-    return { shift, summary, lines: enrichedLines };
+    const business = await ctx.db.get(activeBusinessId);
+
+    return {
+      shift,
+      summary,
+      lines: enrichedLines,
+      businessName: business?.name ?? "—",
+    };
   },
 });
 
@@ -718,6 +725,9 @@ export const addSaleLine = mutation({
     }
 
     if (product.type === "RENTAL") {
+      if (args.qty <= 0) {
+        throw new Error("INVALID_QTY");
+      }
       if ((args.rentalHours ?? 0) <= 0) {
         throw new Error("INVALID_RENTAL_HOURS");
       }
@@ -742,7 +752,7 @@ export const addSaleLine = mutation({
       groupLabel: parseGroupLabel(args.groupLabel),
       customerNote: args.customerNote?.trim() || undefined,
       rentalDescription: args.rentalDescription?.trim() || undefined,
-      qty: product.type === "RENTAL" ? 1 : args.qty,
+      qty: args.qty,
       rentalHours: product.type === "RENTAL" ? args.rentalHours : undefined,
       unitPrice,
       lineTotal,
@@ -793,6 +803,7 @@ export const updateSaleLine = mutation({
       args.rentalDescription ?? line.rentalDescription ?? undefined;
 
     if (product.type === "RENTAL") {
+      if (qty <= 0) throw new Error("INVALID_QTY");
       if ((rentalHours ?? 0) <= 0) throw new Error("INVALID_RENTAL_HOURS");
       if (!rentalDescription?.trim()) {
         throw new Error("RENTAL_DESCRIPTION_REQUIRED");
@@ -803,13 +814,13 @@ export const updateSaleLine = mutation({
 
     const { unitPrice, lineTotal } = calculateLineTotal(
       product,
-      product.type === "RENTAL" ? 1 : qty,
+      qty,
       rentalHours,
     );
 
     await ctx.db.patch(args.lineId, {
       productId,
-      qty: product.type === "RENTAL" ? 1 : qty,
+      qty,
       rentalHours: product.type === "RENTAL" ? rentalHours : undefined,
       rentalDescription:
         product.type === "RENTAL"
@@ -1238,6 +1249,65 @@ export const listStockReceipts = query({
   },
 });
 
+export const getStockReceiptDetail = query({
+  args: {
+    sessionToken: v.string(),
+    receiptId: v.id("stockReceipts"),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!isAdmin(role) && !isSuperAdmin(role)) {
+      throw new Error("FORBIDDEN");
+    }
+    if (!hasAcl(role, "master_produk")) {
+      throw new Error("FORBIDDEN");
+    }
+
+    const receipt = await ctx.db.get(args.receiptId);
+    if (!receipt) {
+      throw new Error("RECEIPT_NOT_FOUND");
+    }
+
+    await assertBusinessAccess(ctx, user, role, receipt.businessId);
+
+    const supplier = await ctx.db.get(receipt.supplierId);
+    const recorder = await ctx.db.get(receipt.recordedBy);
+    const items = await ctx.db
+      .query("stockReceiptItems")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
+      .collect();
+
+    const enrichedItems = [];
+    for (const item of items) {
+      const product = await ctx.db.get(item.productId);
+      enrichedItems.push({
+        productId: item.productId,
+        productName: product?.name ?? "—",
+        productUnit: product?.unit ?? "",
+        qty: item.qty,
+        unitCost: item.unitCost,
+        lineTotal: item.qty * item.unitCost,
+        expiresAt: item.expiresAt,
+      });
+    }
+
+    return {
+      _id: receipt._id,
+      createdAt: receipt.createdAt,
+      supplierId: receipt.supplierId,
+      supplierName: supplier?.name ?? "—",
+      totalAmount: receipt.totalAmount ?? 0,
+      dueAt: receipt.dueAt,
+      supplierPaymentStatus: receipt.supplierPaymentStatus ?? "UNPAID",
+      paidAt: receipt.paidAt,
+      shiftId: receipt.shiftId,
+      note: receipt.note,
+      recordedByName: recorder?.name ?? "—",
+      items: enrichedItems,
+    };
+  },
+});
+
 export const addStockWriteOff = mutation({
   args: {
     sessionToken: v.string(),
@@ -1526,29 +1596,5 @@ export const listPendingCloseRequests = query({
     }
 
     return enriched;
-  },
-});
-
-export const archiveShift = mutation({
-  args: {
-    sessionToken: v.string(),
-    shiftId: v.id("shifts"),
-  },
-  handler: async (ctx, args) => {
-    const { user, role, activeBusinessId } = await getKasirBusinessContext(
-      ctx,
-      args.sessionToken,
-    );
-    if (!activeBusinessId) throw new Error("NO_ACTIVE_BUSINESS");
-
-    await assertCanManageShift(ctx, user, role, activeBusinessId);
-
-    const shift = await ctx.db.get(args.shiftId);
-    if (!shift || shift.businessId !== activeBusinessId) {
-      throw new Error("SHIFT_NOT_FOUND");
-    }
-
-    await archiveShiftDetails(ctx, shift._id);
-    return { success: true };
   },
 });

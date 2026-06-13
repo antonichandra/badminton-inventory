@@ -20,6 +20,7 @@ import type * as lib_businessHelpers from "../lib/businessHelpers.js";
 import type * as lib_groupLabelHelpers from "../lib/groupLabelHelpers.js";
 import type * as lib_inventoryCostHelpers from "../lib/inventoryCostHelpers.js";
 import type * as lib_planHelpers from "../lib/planHelpers.js";
+import type * as lib_productPriceHistoryHelpers from "../lib/productPriceHistoryHelpers.js";
 import type * as lib_rbac from "../lib/rbac.js";
 import type * as lib_shiftCloseHelpers from "../lib/shiftCloseHelpers.js";
 import type * as lib_shiftDetailHelpers from "../lib/shiftDetailHelpers.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   "lib/groupLabelHelpers": typeof lib_groupLabelHelpers;
   "lib/inventoryCostHelpers": typeof lib_inventoryCostHelpers;
   "lib/planHelpers": typeof lib_planHelpers;
+  "lib/productPriceHistoryHelpers": typeof lib_productPriceHistoryHelpers;
   "lib/rbac": typeof lib_rbac;
   "lib/shiftCloseHelpers": typeof lib_shiftCloseHelpers;
   "lib/shiftDetailHelpers": typeof lib_shiftDetailHelpers;

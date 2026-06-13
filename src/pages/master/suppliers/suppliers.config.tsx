@@ -6,6 +6,7 @@ import type { TableColumnConfig } from "../../../core/components/table/types";
 import { Button } from "../../../core/components/ui/Button";
 import { IconButton } from "../../../core/components/ui/IconButton";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { formatDateOnly, type AppLanguage } from "../../../core/utils/formatDate";
 import { formatRupiah } from "../../kasir/utils";
 
 export type SupplierStatusFilter = "ACTIVE" | "INACTIVE";
@@ -144,20 +145,14 @@ interface ReceiptColumnLabels {
   paid: string;
   overdue: string;
   markPaid: string;
-}
-
-function formatReceiptDate(timestamp: number, locale: string): string {
-  return new Date(timestamp).toLocaleDateString(locale, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  detail: string;
 }
 
 export function buildSupplierReceiptTableColumns(
   labels: ReceiptColumnLabels,
-  locale: string,
+  language: AppLanguage,
   onMarkPaid: (row: SupplierReceiptRow) => void,
+  onViewDetail: (row: SupplierReceiptRow) => void,
   markingId: Id<"stockReceipts"> | null,
 ): TableColumnConfig<SupplierReceiptRow>[] {
   const now = Date.now();
@@ -167,7 +162,7 @@ export function buildSupplierReceiptTableColumns(
       type: "display",
       key: "createdAt",
       label: labels.date,
-      getValue: (row) => formatReceiptDate(row.createdAt, locale),
+      getValue: (row) => formatDateOnly(row.createdAt, language),
     },
     {
       type: "display",
@@ -194,7 +189,7 @@ export function buildSupplierReceiptTableColumns(
         return (
           <div className="flex flex-col gap-1">
             <span className="text-sm text-slate-900 dark:text-white">
-              {formatReceiptDate(row.dueAt, locale)}
+              {formatDateOnly(row.dueAt, language)}
             </span>
             {overdue && (
               <Badge variant="danger">
@@ -220,19 +215,25 @@ export function buildSupplierReceiptTableColumns(
       label: "",
       headerClassName: "text-right",
       className: "text-right",
-      render: (row) =>
-        row.supplierPaymentStatus === "UNPAID" ? (
-          <Button
-            size="sm"
-            variant="outline"
-            leftIcon={<Check className="h-3.5 w-3.5" />}
-            loading={markingId === row._id}
-            disabled={markingId !== null}
-            onClick={() => onMarkPaid(row)}
-          >
-            {labels.markPaid}
+      render: (row) => (
+        <div className="flex justify-end gap-1">
+          <Button size="sm" variant="ghost" onClick={() => onViewDetail(row)}>
+            {labels.detail}
           </Button>
-        ) : null,
+          {row.supplierPaymentStatus === "UNPAID" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<Check className="h-3.5 w-3.5" />}
+              loading={markingId === row._id}
+              disabled={markingId !== null}
+              onClick={() => onMarkPaid(row)}
+            >
+              {labels.markPaid}
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
   ];
 }

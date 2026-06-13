@@ -228,7 +228,7 @@ export function KasirPage() {
         <ShiftReportPanel
           sessionToken={sessionToken}
           businessId={kasirContext!.activeBusinessId!}
-          onBack={() => setView(openShift ? "hub" : "report")}
+          onBack={() => setView("hub")}
           onViewShift={(shiftId) => {
             setClosedShiftId(shiftId);
             setSummaryReturnView("report");
@@ -373,7 +373,7 @@ export function KasirPage() {
                 {translate("kasirCloseShift")}
               </Button>
             )}
-            {!shiftIsPending && (
+            {!canManageShift && !shiftIsPending && (
               <Button
                 variant="outline"
                 size="sm"

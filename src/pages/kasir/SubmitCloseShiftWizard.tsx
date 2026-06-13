@@ -109,17 +109,16 @@ export function SubmitCloseShiftWizard({
                   >
                     <td className="px-3 py-2">{row.productName}</td>
                     <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
+                      <InputNumber
+                        variant="inline"
                         value={closingStock[row.productId] ?? "0"}
-                        onChange={(event) =>
+                        onChange={(value) =>
                           setClosingStock((prev) => ({
                             ...prev,
-                            [row.productId]: event.target.value,
+                            [row.productId]: value,
                           }))
                         }
-                        className="h-8 w-20 rounded border border-slate-200 px-2 text-right dark:border-slate-700 dark:bg-slate-800"
+                        min={0}
                       />
                     </td>
                     <td className="px-3 py-2">{row.soldQty}</td>
@@ -144,6 +143,7 @@ export function SubmitCloseShiftWizard({
             value={reportedCash}
             onChange={setReportedCash}
             min={0}
+            format="currency"
             required
           />
           <p className="text-xs text-slate-500 dark:text-slate-400">

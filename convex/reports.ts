@@ -7,6 +7,10 @@ import {
 import { getAuthenticatedUser, hasAcl } from "./lib/rbac";
 import { getActiveUnitCostForProduct } from "./lib/inventoryCostHelpers";
 import { aggregateDailyRollupsFromSaleLines } from "./lib/shiftReportHelpers";
+import {
+  findShiftAtTimestamp,
+  resolvePriceKind,
+} from "./lib/productPriceHistoryHelpers";
 import { formatDateKey } from "./lib/shiftHelpers";
 
 export const getDailyRollups = query({
@@ -247,7 +251,7 @@ export const getProductMarginSummary = query({
   },
 });
 
-export const getSellPriceHistory = query({
+export const getProductPriceHistory = query({
   args: {
     sessionToken: v.string(),
     productId: v.id("products"),
@@ -269,15 +273,36 @@ export const getSellPriceHistory = query({
     const enriched = [];
     for (const entry of history.sort((a, b) => b.effectiveAt - a.effectiveAt)) {
       const changer = await ctx.db.get(entry.changedBy);
+      const priceKind = resolvePriceKind(entry, product.type);
+
+      let shift = entry.shiftId ? await ctx.db.get(entry.shiftId) : null;
+      if (!shift) {
+        shift = await findShiftAtTimestamp(
+          ctx,
+          product.businessId,
+          entry.effectiveAt,
+        );
+      }
+
       enriched.push({
-        ...entry,
+        _id: entry._id,
+        price: entry.price,
+        priceKind,
+        effectiveAt: entry.effectiveAt,
         changedByName: changer?.name ?? "—",
+        shiftId: shift?._id,
+        shiftOpenedAt: shift?.openedAt,
+        shiftClosedAt: shift?.closedAt,
+        shiftStatus: shift?.status,
       });
     }
 
     return enriched;
   },
 });
+
+/** @deprecated Use getProductPriceHistory */
+export const getSellPriceHistory = getProductPriceHistory;
 
 export const getSupplierCostHistory = query({
   args: {

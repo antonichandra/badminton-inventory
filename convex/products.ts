@@ -7,6 +7,7 @@ import {
 } from "./lib/businessContext";
 import { assertAcl, getAuthenticatedUser, hasAcl } from "./lib/rbac";
 import { getActiveUnitCostForProduct } from "./lib/inventoryCostHelpers";
+import { recordProductPriceChange } from "./lib/productPriceHistoryHelpers";
 
 const productStatus = v.union(v.literal("ACTIVE"), v.literal("INACTIVE"));
 const productTypeFilter = v.union(v.literal("RETAIL"), v.literal("RENTAL"));
@@ -281,13 +282,28 @@ export const createProduct = mutation({
       updatedAt: now,
     });
 
+    const rentalPrice =
+      args.type === "RENTAL" ? (args.rentalPricePerHour ?? 0) : 0;
+
     if (args.type === "RETAIL" && sellPrice > 0) {
-      await ctx.db.insert("sellPriceHistory", {
+      await recordProductPriceChange(ctx, {
         productId,
         businessId: activeBusinessId,
         price: sellPrice,
-        effectiveAt: now,
+        priceKind: "RETAIL",
         changedBy: user._id,
+        effectiveAt: now,
+      });
+    }
+
+    if (args.type === "RENTAL" && rentalPrice > 0) {
+      await recordProductPriceChange(ctx, {
+        productId,
+        businessId: activeBusinessId,
+        price: rentalPrice,
+        priceKind: "RENTAL",
+        changedBy: user._id,
+        effectiveAt: now,
       });
     }
 
@@ -329,16 +345,31 @@ export const updateProduct = mutation({
     const now = Date.now();
     const newSellPrice = args.type === "RETAIL" ? args.sellPrice : 0;
 
-    if (
-      args.type === "RETAIL" &&
-      newSellPrice !== product.sellPrice
-    ) {
-      await ctx.db.insert("sellPriceHistory", {
+    const newRentalPrice =
+      args.type === "RENTAL" ? (args.rentalPricePerHour ?? 0) : 0;
+
+    if (args.type === "RETAIL" && newSellPrice !== product.sellPrice) {
+      await recordProductPriceChange(ctx, {
         productId: args.productId,
         businessId: activeBusinessId,
         price: newSellPrice,
-        effectiveAt: now,
+        priceKind: "RETAIL",
         changedBy: user._id,
+        effectiveAt: now,
+      });
+    }
+
+    if (
+      args.type === "RENTAL" &&
+      newRentalPrice !== (product.rentalPricePerHour ?? 0)
+    ) {
+      await recordProductPriceChange(ctx, {
+        productId: args.productId,
+        businessId: activeBusinessId,
+        price: newRentalPrice,
+        priceKind: "RENTAL",
+        changedBy: user._id,
+        effectiveAt: now,
       });
     }
 
