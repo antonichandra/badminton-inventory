@@ -32,10 +32,10 @@ export function BottomNav() {
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95"
         aria-label={translate("navOpenMenu")}
       >
-        <div className="mx-auto flex max-w-lg items-stretch justify-around px-1 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto flex min-h-[3.25rem] max-w-lg items-stretch justify-around px-1 pt-2 pb-2">
           {primaryItems.map((item) =>
             item.path ? (
               <NavLink

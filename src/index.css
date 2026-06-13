@@ -7,6 +7,13 @@
 }
 
 @layer base {
+  :root {
+    --bottom-nav-content: 3.25rem;
+    --bottom-nav-total: calc(
+      var(--bottom-nav-content) + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
   html {
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -127,6 +134,16 @@
     opacity: 0;
     transform: translateY(100%);
   }
+}
+
+.sheet-dragging {
+  animation: none !important;
+  transition: none !important;
+}
+
+.sheet-snap-back {
+  animation: none !important;
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @keyframes backdrop-fade-in {
