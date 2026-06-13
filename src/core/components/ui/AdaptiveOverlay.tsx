@@ -1,7 +1,8 @@
 import { X } from "lucide-react";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigationLayout } from "../../hooks/useNavigationLayout";
+import { useSheetDragToClose } from "../../hooks/useSheetDragToClose";
 import { cn } from "../../utils/cn";
 
 const ANIMATION_MS = 320;
@@ -20,6 +21,8 @@ export interface AdaptiveOverlayProps {
   bottomInset?: string;
   closeOnBackdrop?: boolean;
   showCloseButton?: boolean;
+  /** Allow swipe-down dismiss on sheet variant (default true). */
+  dismissOnDrag?: boolean;
 }
 
 const sizeClasses: Record<OverlaySize, string> = {
@@ -39,13 +42,22 @@ export function AdaptiveOverlay({
   bottomInset,
   closeOnBackdrop = true,
   showCloseButton = true,
+  dismissOnDrag = true,
 }: AdaptiveOverlayProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
   const layout = useNavigationLayout();
   const variant = layout === "bottom" ? "sheet" : "modal";
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
+
+  const sheetDrag = useSheetDragToClose({
+    enabled: variant === "sheet" && dismissOnDrag,
+    open,
+    onClose,
+    panelRef,
+  });
 
   useEffect(() => {
     if (open) {
@@ -95,6 +107,11 @@ export function AdaptiveOverlay({
   const handleBackdropClick = closeOnBackdrop ? onClose : undefined;
 
   if (variant === "sheet") {
+    const suppressCssAnimation =
+      sheetDrag.isDragging ||
+      sheetDrag.isAnimating ||
+      sheetDrag.dragOffset > 0;
+
     return createPortal(
       <div
         className="fixed inset-0 z-[65] flex items-end justify-center"
@@ -104,53 +121,76 @@ export function AdaptiveOverlay({
           type="button"
           aria-label="Close panel"
           data-overlay-backdrop
-          className={backdropClass}
+          className={cn(
+            backdropClass,
+            (sheetDrag.isDragging || sheetDrag.isAnimating) &&
+              "animate-none!",
+          )}
+          style={
+            sheetDrag.backdropOpacity !== undefined
+              ? { opacity: sheetDrag.backdropOpacity }
+              : undefined
+          }
           onClick={handleBackdropClick}
         />
 
         <div
+          ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
           aria-describedby={description ? descriptionId : undefined}
           data-overlay-panel
+          style={sheetDrag.panelStyle}
           className={cn(
             "relative z-10 flex max-h-[88svh] w-full max-w-lg flex-col rounded-t-[1.25rem] border border-slate-200/80 bg-white shadow-[0_-8px_40px_-12px_rgba(15,23,42,0.25)] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-[0_-8px_40px_-12px_rgba(0,0,0,0.5)]",
-            visible
-              ? "animate-[bottom-sheet-enter_320ms_cubic-bezier(0.32,0.72,0,1)_forwards]"
-              : "animate-[bottom-sheet-exit_280ms_cubic-bezier(0.32,0.72,0,1)_forwards]",
+            sheetDrag.isDragging && "sheet-dragging",
+            sheetDrag.isAnimating && "sheet-snap-back",
+            !suppressCssAnimation &&
+              (visible
+                ? "animate-[bottom-sheet-enter_320ms_cubic-bezier(0.32,0.72,0,1)_forwards]"
+                : "animate-[bottom-sheet-exit_280ms_cubic-bezier(0.32,0.72,0,1)_forwards]"),
           )}
         >
-          <div className="flex shrink-0 justify-center pt-3 pb-1">
-            <div className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
-          </div>
+          <div
+            className={cn(
+              "shrink-0 touch-none select-none",
+              sheetDrag.dragEnabled && "cursor-grab active:cursor-grabbing",
+            )}
+            {...sheetDrag.dragZoneProps}
+          >
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
+            </div>
 
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 pb-3 dark:border-slate-800">
-            <div className="min-w-0">
-              <h2
-                id={titleId}
-                className="text-base font-semibold tracking-tight text-slate-900 dark:text-white"
-              >
-                {title}
-              </h2>
-              {description && (
-                <p
-                  id={descriptionId}
-                  className="mt-1 text-sm text-slate-500 dark:text-slate-400"
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 pb-3 dark:border-slate-800">
+              <div className="min-w-0">
+                <h2
+                  id={titleId}
+                  className="text-base font-semibold tracking-tight text-slate-900 dark:text-white"
                 >
-                  {description}
-                </p>
+                  {title}
+                </h2>
+                {description && (
+                  <p
+                    id={descriptionId}
+                    className="mt-1 text-sm text-slate-500 dark:text-slate-400"
+                  >
+                    {description}
+                  </p>
+                )}
+              </div>
+              {showCloseButton && (
+                <button
+                  type="button"
+                  data-sheet-close
+                  onClick={onClose}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               )}
             </div>
-            {showCloseButton && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
           </div>
 
           {children && (

@@ -36,9 +36,7 @@ export function ProtectedLayout() {
           />
           <main
             className={`flex-1 overflow-y-auto p-4 sm:p-6 ${
-              useBottomNav
-                ? "pb-[calc(4.5rem+env(safe-area-inset-bottom))]"
-                : ""
+              useBottomNav ? "pb-[var(--bottom-nav-total)]" : ""
             }`}
           >
             <div className="page-content mx-auto w-full max-w-7xl">

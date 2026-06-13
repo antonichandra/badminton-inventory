@@ -8,6 +8,7 @@ import { Button } from "../../core/components/ui/Button";
 import { ConfirmModal } from "../../core/components/ui/ConfirmModal";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
+import { useNavigationLayout } from "../../core/hooks/useNavigationLayout";
 import { ExportNotaButton } from "./ExportNotaButton";
 import {
   formatLineDescription,
@@ -57,6 +58,7 @@ export function SaleFeed({
 }: SaleFeedProps) {
   const { translate, language } = useLanguage();
   const { showToast } = useToast();
+  const useBottomNav = useNavigationLayout() === "bottom";
 
   const updateSaleLine = useMutation(api.shifts.updateSaleLine);
   const deleteSaleLine = useMutation(api.shifts.deleteSaleLine);
@@ -310,7 +312,15 @@ export function SaleFeed({
   };
 
   return (
-    <div className={payMode ? "space-y-3 pb-32" : "space-y-3"}>
+    <div
+      className={
+        payMode
+          ? useBottomNav
+            ? "space-y-3 pb-[calc(5.5rem+var(--bottom-nav-total))]"
+            : "space-y-3 pb-32"
+          : "space-y-3"
+      }
+    >
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
         <input
           type="text"
@@ -402,7 +412,13 @@ export function SaleFeed({
       })}
 
       {payMode && (
-        <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.15)] dark:border-slate-700 dark:bg-slate-900">
+        <div
+          className={`fixed inset-x-0 z-[70] border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.15)] dark:border-slate-700 dark:bg-slate-900 ${
+            useBottomNav
+              ? "bottom-[var(--bottom-nav-total)]"
+              : "bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          }`}
+        >
           <div className="mx-auto flex max-w-7xl items-end justify-between gap-4">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">
