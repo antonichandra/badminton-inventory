@@ -1,12 +1,12 @@
 export const app = {
   ID: {
-    appName: "Inventaris Lapangan",
-    appSubtitle: "Sistem Manajemen Lapangan",
+    appName: "Courtly",
+    appSubtitle: "Aset Digital Lapangan Anda, Terkelola.",
     sidebarActivePlan: "Plan aktif",
   },
   EN: {
-    appName: "Court Inventory",
-    appSubtitle: "Court Management System",
+    appName: "Courtly",
+    appSubtitle: "Your Digital Court Assets, Managed.",
     sidebarActivePlan: "Active plan",
   },
 } as const;

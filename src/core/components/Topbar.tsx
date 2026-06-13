@@ -8,9 +8,10 @@ import { UserProfileMenu } from "./UserProfileMenu";
 
 interface TopbarProps {
   onMenuOpen?: () => void;
+  showMenuButton?: boolean;
 }
 
-export function Topbar({ onMenuOpen }: TopbarProps) {
+export function Topbar({ onMenuOpen, showMenuButton = true }: TopbarProps) {
   const { language, setLanguage, translate } = useLanguage();
   const { theme, toggleTheme } = useTheme();
 
@@ -22,14 +23,16 @@ export function Topbar({ onMenuOpen }: TopbarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 sm:h-16 sm:px-6 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="shrink-0 lg:hidden"
-          onClick={onMenuOpen}
-          aria-label={translate("navOpenMenu")}
-          leftIcon={<Menu className="h-5 w-5" />}
-        />
+        {showMenuButton && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 lg:hidden"
+            onClick={onMenuOpen}
+            aria-label={translate("navOpenMenu")}
+            leftIcon={<Menu className="h-5 w-5" />}
+          />
+        )}
         <BusinessSwitcher />
       </div>
 

@@ -1,7 +1,9 @@
 import { type CredentialResponse } from "@react-oauth/google";
-import { Loader2, Package, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { BrandedSplash } from "../core/components/BrandedSplash";
+import { CourtlyLogo } from "../core/components/CourtlyLogo";
 import { GoogleSignInButton } from "../core/components/GoogleSignInButton";
 import { useAuth } from "../core/context/AuthContext";
 import { useLanguage } from "../core/context/LanguageContext";
@@ -48,14 +50,7 @@ export function LoginPage() {
   };
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-4 dark:bg-slate-950">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          {translate("loading")}
-        </p>
-      </div>
-    );
+    return <BrandedSplash />;
   }
 
   return (
@@ -63,11 +58,9 @@ export function LoginPage() {
       <div className="w-full max-w-md">
         <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8 dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-6 text-center">
-            <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-600 text-white">
-              <Package className="h-5 w-5" />
-            </div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-              {translate("appName")}
+            <CourtlyLogo size={64} className="mx-auto mb-4" />
+            <h1 className="text-xl font-bold tracking-[0.18em] text-slate-900 dark:text-white">
+              COURTLY
             </h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {translate("appSubtitle")}
