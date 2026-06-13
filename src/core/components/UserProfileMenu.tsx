@@ -98,30 +98,40 @@ export function UserProfileMenu() {
             <button
               type="button"
               onClick={handleLanguageToggle}
+              aria-label={
+                language === "ID"
+                  ? translate("languageEN")
+                  : translate("languageID")
+              }
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 md:hidden dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <Globe className="h-4 w-4" />
               <span>
                 {language === "ID"
-                  ? translate("languageEN")
-                  : translate("languageID")}
+                  ? translate("languageID")
+                  : translate("languageEN")}
               </span>
             </button>
 
             <button
               type="button"
               onClick={toggleTheme}
+              aria-label={
+                theme === "light"
+                  ? translate("themeDark")
+                  : translate("themeLight")
+              }
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 md:hidden dark:text-slate-200 dark:hover:bg-slate-800"
             >
               {theme === "light" ? (
-                <Moon className="h-4 w-4" />
-              ) : (
                 <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
               )}
               <span>
                 {theme === "light"
-                  ? translate("themeDark")
-                  : translate("themeLight")}
+                  ? translate("themeLight")
+                  : translate("themeDark")}
               </span>
             </button>
 

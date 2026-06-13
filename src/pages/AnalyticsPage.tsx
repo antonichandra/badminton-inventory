@@ -6,11 +6,11 @@ import { PermissionGuard } from "../core/components/PermissionGuard";
 import { useAuth } from "../core/context/AuthContext";
 import { useBusiness } from "../core/context/BusinessContext";
 import { useLanguage } from "../core/context/LanguageContext";
+import { formatDateOnly } from "../core/utils/formatDate";
 import { formatRupiah } from "./kasir/utils";
 
 const CHART_DAYS = 30;
-const CHART_HEIGHT_PX = 180;
-const X_AXIS_TICKS = 5;
+const X_AXIS_TICKS = 6;
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
@@ -74,9 +74,9 @@ function DailySalesLineChart({
   formatValue,
 }: DailySalesLineChartProps) {
   const gradientId = useId().replace(/:/g, "");
-  const width = 100;
-  const height = 100;
-  const pad = { top: 8, right: 4, bottom: 18, left: 4 };
+  const width = 360;
+  const height = 120;
+  const pad = { top: 10, right: 8, bottom: 22, left: 8 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const xDenom = Math.max(series.length - 1, 1);
@@ -108,8 +108,7 @@ function DailySalesLineChart({
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="w-full text-emerald-500"
-      style={{ height: CHART_HEIGHT_PX }}
+      className="h-auto w-full max-h-[320px] text-emerald-500"
       role="img"
       aria-hidden
     >
@@ -129,7 +128,7 @@ function DailySalesLineChart({
           x2={width - pad.right}
           y2={y}
           className="stroke-slate-200 dark:stroke-slate-700/80"
-          strokeWidth="0.35"
+          strokeWidth="0.5"
           strokeDasharray="1.2 1.4"
         />
       ))}
@@ -141,7 +140,7 @@ function DailySalesLineChart({
           x2={points[index].x}
           y2={baseline}
           className="stroke-slate-200 dark:stroke-slate-700/80"
-          strokeWidth="0.35"
+          strokeWidth="0.5"
           strokeDasharray="1.2 1.4"
         />
       ))}
@@ -151,7 +150,7 @@ function DailySalesLineChart({
         d={linePath}
         fill="none"
         className="stroke-emerald-500"
-        strokeWidth="1.2"
+        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -162,7 +161,7 @@ function DailySalesLineChart({
             key={point.date}
             cx={point.x}
             cy={point.y}
-            r="1.4"
+            r="2.5"
             className="fill-emerald-500 stroke-white dark:stroke-slate-900"
             strokeWidth="0.5"
           >
@@ -173,9 +172,9 @@ function DailySalesLineChart({
         <text
           key={series[index].date}
           x={points[index].x}
-          y={height - 4}
+          y={height - 8}
           textAnchor="middle"
-          className="fill-slate-400 text-[3.5px]"
+          className="fill-slate-400 text-[6px]"
         >
           {formatAxisLabel(series[index].date)}
         </text>
@@ -185,7 +184,7 @@ function DailySalesLineChart({
 }
 
 export function AnalyticsPage() {
-  const { translate } = useLanguage();
+  const { translate, language } = useLanguage();
   const { sessionToken } = useAuth();
   const { activeBusinessId } = useBusiness();
 
@@ -312,7 +311,7 @@ export function AnalyticsPage() {
                   <span>{batch.productName}</span>
                   <span className="shrink-0 text-amber-900 dark:text-amber-200">
                     {batch.qtyRemaining} pcs ·{" "}
-                    {new Date(batch.expiresAt!).toLocaleDateString("id-ID")}
+                    {formatDateOnly(batch.expiresAt!, language)}
                   </span>
                 </li>
               ))}

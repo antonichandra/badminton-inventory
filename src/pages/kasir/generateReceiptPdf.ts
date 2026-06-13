@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getSportEmoji } from "../../core/config/sportEmoji";
+import { formatDateTime } from "../../core/utils/formatDate";
 import { formatRupiah } from "./utils";
 
 export interface ReceiptLine {
@@ -29,16 +30,6 @@ export interface ReceiptData {
 
 const PAGE_WIDTH = 80;
 const MARGIN_X = 4;
-
-function formatDateTime(ts: number): string {
-  return new Date(ts).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function formatPdfAmount(amount: number): string {
   return formatRupiah(amount).replace("Rp", "").trim();
@@ -88,7 +79,7 @@ export function generateReceiptPdf(data: ReceiptData): Blob {
     y += 4;
   }
 
-  doc.text(formatDateTime(data.paidAt), centerX, y, { align: "center" });
+  doc.text(formatDateTime(data.paidAt, "ID"), centerX, y, { align: "center" });
   y += 4;
   doc.text(`Ref: ${ref}`, centerX, y, { align: "center" });
   y += 3;
@@ -98,9 +89,13 @@ export function generateReceiptPdf(data: ReceiptData): Blob {
   y += 2;
 
   const tableBody = data.lines.map((line) => {
+    const rentalSuffix =
+      line.rentalHours && line.rentalHours > 0
+        ? ` · ${line.qty}×${line.rentalHours}j`
+        : "";
     const name =
       line.rentalDescription?.trim() ||
-      line.productName + (line.rentalHours ? ` (${line.rentalHours}j)` : "");
+      line.productName + rentalSuffix;
     return [
       name,
       String(line.qty),

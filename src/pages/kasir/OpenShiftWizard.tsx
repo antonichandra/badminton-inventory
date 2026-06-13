@@ -182,6 +182,7 @@ export function OpenShiftWizard({
             value={openingCash}
             onChange={setOpeningCash}
             min={0}
+            format="currency"
             required
           />
           <div className="flex justify-between">
@@ -225,17 +226,16 @@ export function OpenShiftWizard({
                       </p>
                       <p className="text-xs text-slate-500">{row.unit}</p>
                     </div>
-                    <input
-                      type="number"
-                      min={0}
+                    <InputNumber
+                      variant="inline"
                       value={row.qty}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setStockQty((prev) => ({
                           ...prev,
-                          [row.productId]: event.target.value,
+                          [row.productId]: value,
                         }))
                       }
-                      className="h-9 w-24 rounded-lg border border-slate-200 px-2 text-right text-sm dark:border-slate-700 dark:bg-slate-800"
+                      min={0}
                     />
                   </div>
                 ))}

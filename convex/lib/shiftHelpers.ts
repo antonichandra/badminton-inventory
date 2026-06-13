@@ -10,7 +10,7 @@ export function calculateLineTotal(
   if (product.type === "RENTAL") {
     const hours = rentalHours ?? 0;
     const unitPrice = product.rentalPricePerHour ?? 0;
-    return { unitPrice, lineTotal: unitPrice * hours };
+    return { unitPrice, lineTotal: unitPrice * qty * hours };
   }
 
   return { unitPrice: product.sellPrice, lineTotal: product.sellPrice * qty };
@@ -149,6 +149,8 @@ export async function getShiftSalesByPriceTier(
       unitPrice: number;
       qty: number;
       revenue: number;
+      productType: "RETAIL" | "RENTAL";
+      rentalHoursTotal: number;
     }
   >();
 
@@ -156,10 +158,15 @@ export async function getShiftSalesByPriceTier(
     if (line.paymentStatus !== "PAID") continue;
     const product = await ctx.db.get(line.productId);
     const key = `${line.productId}:${line.unitPrice}`;
+    const productType = product?.type ?? "RETAIL";
+    const rentalHours = line.rentalHours ?? 0;
     const existing = tierMap.get(key);
     if (existing) {
       existing.qty += line.qty;
       existing.revenue += line.lineTotal;
+      if (productType === "RENTAL") {
+        existing.rentalHoursTotal += line.qty * rentalHours;
+      }
     } else {
       tierMap.set(key, {
         productId: line.productId,
@@ -167,6 +174,8 @@ export async function getShiftSalesByPriceTier(
         unitPrice: line.unitPrice,
         qty: line.qty,
         revenue: line.lineTotal,
+        productType,
+        rentalHoursTotal: productType === "RENTAL" ? line.qty * rentalHours : 0,
       });
     }
   }

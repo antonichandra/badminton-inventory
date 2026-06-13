@@ -1,15 +1,28 @@
-import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMemo, useState } from "react";
+import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { InputText } from "../../core/components/forms/InputText";
 import { Button } from "../../core/components/ui/Button";
 import { useLanguage } from "../../core/context/LanguageContext";
-import { useToast } from "../../core/context/ToastContext";
+import { formatDateOnly, formatDateTime } from "../../core/utils/formatDate";
 import { ExportShiftButton } from "./ExportShiftButton";
+import { ExportShiftPdfButton } from "./ExportShiftPdfButton";
+import { SalesByTierTabs } from "./SalesByTierTabs";
 import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
-import { formatRupiah } from "./utils";
+import { formatRupiah, getShiftDurationDays } from "./utils";
 
 type SummaryTab = "stock" | "receipts" | "expenses" | "deposits";
+
+type PriceTierRow = {
+  productId: Id<"products">;
+  productName: string;
+  unitPrice: number;
+  qty: number;
+  revenue: number;
+  productType?: "RETAIL" | "RENTAL";
+  rentalHoursTotal?: number;
+};
 
 interface ShiftSummaryViewProps {
   sessionToken: string;
@@ -26,28 +39,47 @@ export function ShiftSummaryView({
   onBack,
   showOpenNewShift = true,
 }: ShiftSummaryViewProps) {
-  const { translate } = useLanguage();
-  const { showToast } = useToast();
-  const archiveShift = useMutation(api.shifts.archiveShift);
+  const { translate, language } = useLanguage();
   const [tab, setTab] = useState<SummaryTab>("stock");
+  const [productFilter, setProductFilter] = useState("");
 
   const data = useQuery(api.shifts.getShiftDetail, {
     sessionToken,
     shiftId,
   });
 
-  const handleArchive = async () => {
-    try {
-      await archiveShift({ sessionToken, shiftId });
-      showToast({
-        type: "success",
-        message: translate("kasirArchiveSuccess"),
-      });
-    } catch (error) {
-      console.error(error);
-      showToast({ type: "error", message: translate("unexpectedError") });
-    }
-  };
+  const filterLower = productFilter.trim().toLowerCase();
+
+  const filteredStockRecon = useMemo(() => {
+    if (!data) return [];
+    if (!filterLower) return data.stockReconciliation;
+    return data.stockReconciliation.filter((row) =>
+      row.productName.toLowerCase().includes(filterLower),
+    );
+  }, [data, filterLower]);
+
+  const filteredSalesTiers = useMemo(() => {
+    if (!data) return [];
+    if (!filterLower) return data.salesByPriceTier;
+    return data.salesByPriceTier.filter((row) =>
+      row.productName.toLowerCase().includes(filterLower),
+    );
+  }, [data, filterLower]);
+
+  const totalProductCount = useMemo(() => {
+    if (!data) return 0;
+    const names = new Set<string>();
+    for (const row of data.stockReconciliation) names.add(row.productName);
+    for (const row of data.salesByPriceTier) names.add(row.productName);
+    return names.size;
+  }, [data]);
+
+  const filteredProductCount = useMemo(() => {
+    const names = new Set<string>();
+    for (const row of filteredStockRecon) names.add(row.productName);
+    for (const row of filteredSalesTiers) names.add(row.productName);
+    return names.size;
+  }, [filteredStockRecon, filteredSalesTiers]);
 
   if (!data) {
     return (
@@ -57,14 +89,17 @@ export function ShiftSummaryView({
     );
   }
 
-  const { shift, summary, cashSummary, cashEntries, stockReceipts, stockReconciliation } =
-    data;
+  const { shift, summary, cashSummary, cashEntries, stockReceipts } = data;
 
   const expenses = cashEntries.filter((e) => e.type === "EXPENSE");
   const deposits = cashEntries.filter((e) => e.type === "DEPOSIT");
 
   const tabs: { id: SummaryTab; label: string; count?: number }[] = [
-    { id: "stock", label: translate("kasirTabStock"), count: stockReconciliation.length },
+    {
+      id: "stock",
+      label: translate("kasirTabStock"),
+      count: data.stockReconciliation.length,
+    },
     {
       id: "receipts",
       label: translate("kasirTabReceipts"),
@@ -94,6 +129,11 @@ export function ShiftSummaryView({
   const expenseTotal = summary?.expenses ?? cashSummary.expenses;
   const depositTotal = summary?.deposits ?? cashSummary.deposits;
 
+  const durationDays =
+    closedAt && shift.openedAt
+      ? getShiftDurationDays(shift.openedAt, closedAt)
+      : null;
+
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       {onBack && (
@@ -103,25 +143,45 @@ export function ShiftSummaryView({
       )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-          {translate("kasirSummary")}
-        </h2>
-        {closedAt && (
-          <p className="mt-1 text-sm text-slate-500">
-            {new Date(closedAt).toLocaleString("id-ID")}
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+            {translate("kasirSummary")}
+          </h2>
+          <div className="flex shrink-0 gap-2">
+            <ExportShiftButton sessionToken={sessionToken} shiftId={shiftId} />
+            <ExportShiftPdfButton sessionToken={sessionToken} shiftId={shiftId} />
+          </div>
+        </div>
+
+        <div className="mt-2 space-y-0.5 text-sm text-slate-500">
+          <p>
+            {translate("kasirShiftOpenedAt")}:{" "}
+            {formatDateTime(shift.openedAt, language)}
           </p>
-        )}
-        {data.assignedStaffName && (
-          <p className="text-sm text-slate-500">
-            {translate("kasirOnDuty")}: {data.assignedStaffName}
-            {data.closedByName && (
-              <>
-                {" "}
-                · {translate("kasirClosedBy")}: {data.closedByName}
-              </>
-            )}
-          </p>
-        )}
+          {closedAt && (
+            <p>
+              {translate("kasirShiftClosedAt")}:{" "}
+              {formatDateTime(closedAt, language)}
+            </p>
+          )}
+          {durationDays !== null && (
+            <p>
+              {translate("kasirShiftDuration")}:{" "}
+              {translate("kasirShiftDays").replace("{days}", String(durationDays))}
+            </p>
+          )}
+          {data.assignedStaffName && (
+            <p>
+              {translate("kasirOnDuty")}: {data.assignedStaffName}
+              {data.closedByName && (
+                <>
+                  {" "}
+                  · {translate("kasirClosedBy")}: {data.closedByName}
+                </>
+              )}
+            </p>
+          )}
+        </div>
 
         <div className="mt-4">
           <ShiftCashBreakdown
@@ -161,22 +221,35 @@ export function ShiftSummaryView({
           ))}
         </div>
 
+        {tab === "stock" && (
+          <div className="mt-4">
+            <InputText
+              label={translate("kasirFilterProduct")}
+              value={productFilter}
+              onChange={setProductFilter}
+              placeholder={translate("kasirFilterProduct")}
+              type="search"
+            />
+            {filterLower && (
+              <p className="mt-1 text-xs text-slate-500">
+                {translate("kasirFilterProductCount")
+                  .replace("{filtered}", String(filteredProductCount))
+                  .replace("{total}", String(totalProductCount))}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 overflow-x-auto">
           {tab === "stock" && (
-            <StockReconTable rows={stockReconciliation} salesByPriceTier={data.salesByPriceTier} />
+            <StockReconTable
+              rows={filteredStockRecon}
+              salesByPriceTier={filteredSalesTiers}
+            />
           )}
-          {tab === "receipts" && (
-            <ReceiptsTable rows={stockReceipts} />
-          )}
+          {tab === "receipts" && <ReceiptsTable rows={stockReceipts} />}
           {tab === "expenses" && <CashEntriesTable rows={expenses} />}
           {tab === "deposits" && <CashEntriesTable rows={deposits} />}
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <ExportShiftButton sessionToken={sessionToken} shiftId={shiftId} />
-          <Button variant="outline" size="sm" onClick={handleArchive}>
-            {translate("kasirArchiveShift")}
-          </Button>
         </div>
       </div>
 
@@ -205,13 +278,7 @@ function StockReconTable({
     overInputQty: number;
     missInputQty: number;
   }>;
-  salesByPriceTier: Array<{
-    productId: Id<"products">;
-    productName: string;
-    unitPrice: number;
-    qty: number;
-    revenue: number;
-  }>;
+  salesByPriceTier: PriceTierRow[];
 }) {
   const { translate } = useLanguage();
 
@@ -226,39 +293,46 @@ function StockReconTable({
   return (
     <div className="space-y-4">
       {rows.length > 0 && (
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-left dark:bg-slate-800">
-            <tr>
-              <th className="px-3 py-2">Produk</th>
-              <th className="px-3 py-2">{translate("kasirOpeningStock")}</th>
-              <th className="px-3 py-2">{translate("kasirReceived")}</th>
-              <th className="px-3 py-2">{translate("kasirWriteOff")}</th>
-              <th className="px-3 py-2">{translate("kasirClosingStock")}</th>
-              <th className="px-3 py-2">{translate("kasirSoldPhysical")}</th>
-              <th className="px-3 py-2">{translate("kasirSoldRecorded")}</th>
-              <th className="px-3 py-2">{translate("kasirOverInput")}</th>
-              <th className="px-3 py-2">{translate("kasirMissInput")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.productId}
-                className="border-t border-slate-100 dark:border-slate-800"
-              >
-                <td className="px-3 py-2">{row.productName}</td>
-                <td className="px-3 py-2">{row.openingQty}</td>
-                <td className="px-3 py-2">{row.receivedQty}</td>
-                <td className="px-3 py-2">{row.writeOffQty}</td>
-                <td className="px-3 py-2">{row.closingQty}</td>
-                <td className="px-3 py-2 font-medium">{row.soldQtyFromStock}</td>
-                <td className="px-3 py-2">{row.soldQtyFromLines}</td>
-                <td className="px-3 py-2 text-amber-600">{row.overInputQty || "—"}</td>
-                <td className="px-3 py-2 text-blue-600">{row.missInputQty || "—"}</td>
+        <>
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left dark:bg-slate-800">
+              <tr>
+                <th className="px-3 py-2">Produk</th>
+                <th className="px-3 py-2">{translate("kasirOpeningStock")}</th>
+                <th className="px-3 py-2">{translate("kasirReceived")}</th>
+                <th className="px-3 py-2">{translate("kasirWriteOff")}</th>
+                <th className="px-3 py-2">{translate("kasirClosingStock")}</th>
+                <th className="px-3 py-2">{translate("kasirSoldPhysical")}</th>
+                <th className="px-3 py-2">{translate("kasirSoldRecorded")}</th>
+                <th className="px-3 py-2">{translate("kasirOverInput")}</th>
+                <th className="px-3 py-2">{translate("kasirMissInput")}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.productId}
+                  className="border-t border-slate-100 dark:border-slate-800"
+                >
+                  <td className="px-3 py-2">{row.productName}</td>
+                  <td className="px-3 py-2">{row.openingQty}</td>
+                  <td className="px-3 py-2">{row.receivedQty}</td>
+                  <td className="px-3 py-2">{row.writeOffQty}</td>
+                  <td className="px-3 py-2">{row.closingQty}</td>
+                  <td className="px-3 py-2 font-medium">{row.soldQtyFromStock}</td>
+                  <td className="px-3 py-2">{row.soldQtyFromLines}</td>
+                  <td className="px-3 py-2 text-amber-600">
+                    {row.overInputQty || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-blue-600">
+                    {row.missInputQty || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-slate-500">{translate("kasirRentalNote")}</p>
+        </>
       )}
 
       {salesByPriceTier.length > 0 && (
@@ -266,29 +340,7 @@ function StockReconTable({
           <p className="mb-2 text-xs font-medium uppercase text-slate-500">
             {translate("kasirSalesByPrice")}
           </p>
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left dark:bg-slate-800">
-              <tr>
-                <th className="px-3 py-2">Produk</th>
-                <th className="px-3 py-2">{translate("kasirPriceTier")}</th>
-                <th className="px-3 py-2">{translate("kasirSoldQty")}</th>
-                <th className="px-3 py-2">{translate("kasirRevenue")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {salesByPriceTier.map((tier) => (
-                <tr
-                  key={`${tier.productId}-${tier.unitPrice}`}
-                  className="border-t border-slate-100 dark:border-slate-800"
-                >
-                  <td className="px-3 py-2">{tier.productName}</td>
-                  <td className="px-3 py-2">{formatRupiah(tier.unitPrice)}</td>
-                  <td className="px-3 py-2">{tier.qty}</td>
-                  <td className="px-3 py-2">{formatRupiah(tier.revenue)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <SalesByTierTabs tiers={salesByPriceTier} />
         </div>
       )}
     </div>
@@ -312,7 +364,7 @@ function ReceiptsTable({
     expiresAt?: number;
   }>;
 }) {
-  const { translate } = useLanguage();
+  const { translate, language } = useLanguage();
 
   if (rows.length === 0) {
     return (
@@ -343,7 +395,7 @@ function ReceiptsTable({
             className="border-t border-slate-100 dark:border-slate-800"
           >
             <td className="px-3 py-2 whitespace-nowrap">
-              {new Date(row.createdAt).toLocaleString("id-ID")}
+              {formatDateTime(row.createdAt, language)}
             </td>
             <td className="px-3 py-2">{row.supplierName}</td>
             <td className="px-3 py-2">
@@ -355,7 +407,7 @@ function ReceiptsTable({
             <td className="px-3 py-2">{formatRupiah(row.lineTotal)}</td>
             <td className="px-3 py-2">
               {row.expiresAt
-                ? new Date(row.expiresAt).toLocaleDateString("id-ID")
+                ? formatDateOnly(row.expiresAt, language)
                 : "—"}
             </td>
             <td className="px-3 py-2 max-w-[120px] truncate">{row.note ?? "—"}</td>
@@ -377,7 +429,7 @@ function CashEntriesTable({
     recordedByName: string;
   }>;
 }) {
-  const { translate } = useLanguage();
+  const { translate, language } = useLanguage();
 
   if (rows.length === 0) {
     return (
@@ -404,7 +456,7 @@ function CashEntriesTable({
             className="border-t border-slate-100 dark:border-slate-800"
           >
             <td className="px-3 py-2 whitespace-nowrap">
-              {new Date(row.createdAt).toLocaleString("id-ID")}
+              {formatDateTime(row.createdAt, language)}
             </td>
             <td className="px-3 py-2 font-medium">{formatRupiah(row.amount)}</td>
             <td className="px-3 py-2">{row.note}</td>

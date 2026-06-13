@@ -3,7 +3,8 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "../../core/components/ui/Button";
 import { useLanguage } from "../../core/context/LanguageContext";
-import { ExportShiftButton } from "./ExportShiftButton";
+import { formatDateTime } from "../../core/utils/formatDate";
+import { SalesByTierTabs } from "./SalesByTierTabs";
 import { formatRupiah } from "./utils";
 
 interface ShiftReportPanelProps {
@@ -19,7 +20,7 @@ export function ShiftReportPanel({
   onBack,
   onViewShift,
 }: ShiftReportPanelProps) {
-  const { translate } = useLanguage();
+  const { translate, language } = useLanguage();
 
   const liveStats = useQuery(api.shifts.getShiftLiveStats, { sessionToken });
   const summaries = useQuery(api.shifts.listShiftSummaries, {
@@ -77,32 +78,10 @@ export function ShiftReportPanel({
             </div>
           )}
 
-          {liveStats.salesByPriceTier.length > 0 && (
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500">
-                    <th className="py-1 pr-2">Produk</th>
-                    <th className="py-1 pr-2">{translate("kasirPriceTier")}</th>
-                    <th className="py-1 pr-2">Qty</th>
-                    <th className="py-1">{translate("kasirRevenue")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {liveStats.salesByPriceTier.map((tier) => (
-                    <tr key={`${tier.productId}-${tier.unitPrice}`}>
-                      <td className="py-1 pr-2">{tier.productName}</td>
-                      <td className="py-1 pr-2">
-                        {formatRupiah(tier.unitPrice)}
-                      </td>
-                      <td className="py-1 pr-2">{tier.qty}</td>
-                      <td className="py-1">{formatRupiah(tier.revenue)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <SalesByTierTabs
+            tiers={liveStats.salesByPriceTier}
+            variant="compact"
+          />
         </section>
       )}
 
@@ -144,7 +123,7 @@ export function ShiftReportPanel({
                 onClick={() => onViewShift?.(summary.shiftId)}
               >
                 <p className="text-sm font-medium">
-                  {new Date(summary.closedAt).toLocaleString("id-ID")}
+                  {formatDateTime(summary.closedAt, language)}
                 </p>
                 <p className="text-xs text-slate-500">
                   {formatRupiah(summary.totalRevenue)} ·{" "}
@@ -162,10 +141,6 @@ export function ShiftReportPanel({
                     {translate("kasirViewDetail")}
                   </Button>
                 )}
-                <ExportShiftButton
-                  sessionToken={sessionToken}
-                  shiftId={summary.shiftId}
-                />
               </div>
             </div>
           ))}

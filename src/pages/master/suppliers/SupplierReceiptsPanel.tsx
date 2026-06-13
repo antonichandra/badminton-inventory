@@ -12,6 +12,7 @@ import {
   type SupplierReceiptPaymentFilter,
   type SupplierReceiptRow,
 } from "./suppliers.config";
+import { SupplierReceiptDetailSheet } from "./SupplierReceiptDetailSheet";
 
 interface SupplierReceiptsPanelProps {
   sessionToken: string;
@@ -26,6 +27,8 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
   const [paymentFilter, setPaymentFilter] =
     useState<SupplierReceiptPaymentFilter>("ALL");
   const [markingId, setMarkingId] = useState<Id<"stockReceipts"> | null>(null);
+  const [detailReceiptId, setDetailReceiptId] =
+    useState<Id<"stockReceipts"> | null>(null);
 
   const receipts = useQuery(
     api.shifts.listStockReceipts,
@@ -38,8 +41,6 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
         }
       : "skip",
   );
-
-  const locale = language === "ID" ? "id-ID" : "en-US";
 
   const handleMarkPaid = useCallback(
     async (row: SupplierReceiptRow) => {
@@ -73,12 +74,14 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
           paid: translate("supplierReceiptPaid"),
           overdue: translate("supplierReceiptOverdue"),
           markPaid: translate("supplierReceiptMarkPaid"),
+          detail: translate("supplierReceiptDetail"),
         },
-        locale,
+        language,
         handleMarkPaid,
+        (row) => setDetailReceiptId(row._id),
         markingId,
       ),
-    [handleMarkPaid, locale, markingId, translate],
+    [handleMarkPaid, language, markingId, translate],
   );
 
   const filterOptions: { value: SupplierReceiptPaymentFilter; label: string }[] =
@@ -109,6 +112,15 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
         getRowKey={(row) => row._id}
         emptyMessage={translate("supplierReceiptEmpty")}
         isLoading={receipts === undefined}
+      />
+
+      <SupplierReceiptDetailSheet
+        open={detailReceiptId !== null}
+        onClose={() => setDetailReceiptId(null)}
+        sessionToken={sessionToken}
+        receiptId={detailReceiptId}
+        onMarkPaid={handleMarkPaid}
+        markingId={markingId}
       />
     </div>
   );

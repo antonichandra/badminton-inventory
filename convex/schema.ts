@@ -85,6 +85,8 @@ const priceTierEntry = v.object({
   unitPrice: v.number(),
   qty: v.number(),
   revenue: v.number(),
+  productType: v.optional(productType),
+  rentalHoursTotal: v.optional(v.number()),
 });
 
 const topProductEntry = v.object({
@@ -244,6 +246,8 @@ export default defineSchema({
     price: v.number(),
     effectiveAt: v.number(),
     changedBy: v.id("users"),
+    priceKind: v.optional(v.union(v.literal("RETAIL"), v.literal("RENTAL"))),
+    shiftId: v.optional(v.id("shifts")),
   })
     .index("by_productId", ["productId"])
     .index("by_businessId", ["businessId"]),

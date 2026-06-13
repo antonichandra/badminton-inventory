@@ -237,6 +237,7 @@ export function StockReceiptSheet({
                         setCostByProduct((prev) => ({ ...prev, [product._id]: v }))
                       }
                       min={0}
+                      format="currency"
                     />
                   </div>
                   {product.trackExpiry && (

@@ -8,6 +8,7 @@ import { ConfirmModal } from "../../core/components/ui/ConfirmModal";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
 import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
+import { SalesByTierTabs } from "./SalesByTierTabs";
 import { formatRupiah } from "./utils";
 
 interface CloseShiftWizardProps {
@@ -140,17 +141,16 @@ export function CloseShiftWizard({
                   >
                     <td className="px-3 py-2">{row.productName}</td>
                     <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
+                      <InputNumber
+                        variant="inline"
                         value={closingStock[row.productId] ?? "0"}
-                        onChange={(event) =>
+                        onChange={(value) =>
                           setClosingStock((prev) => ({
                             ...prev,
-                            [row.productId]: event.target.value,
+                            [row.productId]: value,
                           }))
                         }
-                        className="h-8 w-20 rounded border border-slate-200 px-2 text-right dark:border-slate-700 dark:bg-slate-800"
+                        min={0}
                       />
                     </td>
                     <td className="px-3 py-2">{row.receivedQty}</td>
@@ -177,6 +177,7 @@ export function CloseShiftWizard({
             value={closingCash}
             onChange={setClosingCash}
             min={0}
+            format="currency"
             required
           />
           <InputNumber
@@ -184,6 +185,7 @@ export function CloseShiftWizard({
             value={closingQris}
             onChange={setClosingQris}
             min={0}
+            format="currency"
             required
           />
 
@@ -221,37 +223,7 @@ export function CloseShiftWizard({
             {translate("kasirSummary")}
           </h3>
 
-          {(liveStats?.salesByPriceTier ?? []).length > 0 && (
-            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left dark:bg-slate-800">
-                  <tr>
-                    <th className="px-3 py-2">Produk</th>
-                    <th className="px-3 py-2">{translate("kasirPriceTier")}</th>
-                    <th className="px-3 py-2">{translate("kasirSoldQty")}</th>
-                    <th className="px-3 py-2">{translate("kasirRevenue")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {liveStats?.salesByPriceTier.map((tier) => (
-                    <tr
-                      key={`${tier.productId}-${tier.unitPrice}`}
-                      className="border-t border-slate-100 dark:border-slate-800"
-                    >
-                      <td className="px-3 py-2">{tier.productName}</td>
-                      <td className="px-3 py-2">
-                        {formatRupiah(tier.unitPrice)}
-                      </td>
-                      <td className="px-3 py-2">{tier.qty}</td>
-                      <td className="px-3 py-2">
-                        {formatRupiah(tier.revenue)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <SalesByTierTabs tiers={liveStats?.salesByPriceTier ?? []} />
 
           <ShiftCashBreakdown
             openingCash={cashSummary.openingCash}

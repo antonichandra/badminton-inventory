@@ -221,7 +221,7 @@ export function SaleFeed({
                           : translate("kasirCash")
                       }`}
                 </Badge>
-                {isUnpaid && line.productType === "RETAIL" && !payMode && (
+                {isUnpaid && !payMode && (
                   <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-0.5 dark:border-slate-700 dark:bg-slate-900">
                     <button
                       type="button"

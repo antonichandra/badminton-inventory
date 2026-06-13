@@ -163,6 +163,7 @@ export function ReviewCloseShiftPanel({
               value={verifiedQris}
               onChange={setVerifiedQris}
               min={0}
+              format="currency"
               required
             />
           </div>

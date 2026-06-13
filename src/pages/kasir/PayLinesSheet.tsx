@@ -181,6 +181,7 @@ export const PayLinesSheet = forwardRef<PayLinesSheetHandle, PayLinesSheetProps>
                 value={amountReceived}
                 onChange={setAmountReceived}
                 min={0}
+                format="currency"
                 required
               />
               <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">

@@ -22,6 +22,7 @@ import {
   type ProductTypeFilter,
 } from "./products/products.config";
 import { ProductFormModal } from "./products/ProductFormModal";
+import { ProductPriceHistorySheet } from "./products/ProductPriceHistorySheet";
 
 export function ProdukPage() {
   const { translate } = useLanguage();
@@ -30,6 +31,7 @@ export function ProdukPage() {
   const { showToast } = useToast();
   const [formOpen, setFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+  const [historyProduct, setHistoryProduct] = useState<ProductRow | null>(null);
 
   const filterFields = useMemo(
     () =>
@@ -91,6 +93,10 @@ export function ProdukPage() {
     setFormOpen(true);
   }, []);
 
+  const handlePriceHistory = useCallback((row: ProductRow) => {
+    setHistoryProduct(row);
+  }, []);
+
   const columns = useMemo(
     () =>
       buildProductTableColumns(
@@ -110,10 +116,12 @@ export function ProdukPage() {
           active: translate("supplierActive"),
           inactive: translate("supplierInactive"),
           edit: translate("productEdit"),
+          priceHistory: translate("productPriceHistory"),
         },
         handleEdit,
+        handlePriceHistory,
       ),
-    [handleEdit, translate],
+    [handleEdit, handlePriceHistory, translate],
   );
 
   const handleAdd = () => {
@@ -178,6 +186,15 @@ export function ProdukPage() {
           sessionToken={sessionToken}
           product={editingProduct}
           onSuccess={handleSuccess}
+        />
+      )}
+
+      {sessionToken && (
+        <ProductPriceHistorySheet
+          open={historyProduct !== null}
+          onClose={() => setHistoryProduct(null)}
+          sessionToken={sessionToken}
+          product={historyProduct}
         />
       )}
     </PermissionGuard>

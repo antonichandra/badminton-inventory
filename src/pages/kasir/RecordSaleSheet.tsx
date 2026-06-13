@@ -73,7 +73,11 @@ export function RecordSaleSheet({
   const previewTotal = useMemo(() => {
     if (!selectedProduct) return 0;
     if (selectedProduct.type === "RENTAL") {
-      return (selectedProduct.rentalPricePerHour ?? 0) * (Number(hours) || 0);
+      return (
+        (selectedProduct.rentalPricePerHour ?? 0) *
+        (Number(qty) || 0) *
+        (Number(hours) || 0)
+      );
     }
     return selectedProduct.sellPrice * (Number(qty) || 0);
   }, [selectedProduct, qty, hours]);
@@ -110,7 +114,11 @@ export function RecordSaleSheet({
   const isRental = selectedProduct?.type === "RENTAL";
   const canSubmit =
     !!productId &&
-    (!isRental || (Number(hours) > 0 && rentalDescription.trim().length > 0));
+    (isRental
+      ? Number(qty) > 0 &&
+        Number(hours) > 0 &&
+        rentalDescription.trim().length > 0
+      : Number(qty) > 0);
 
   return (
     <BottomSheet
@@ -141,6 +149,13 @@ export function RecordSaleSheet({
 
         {isRental ? (
           <>
+            <InputNumber
+              label={translate("kasirQty")}
+              value={qty}
+              onChange={setQty}
+              min={1}
+              required
+            />
             <InputNumber
               label={translate("kasirHours")}
               value={hours}
