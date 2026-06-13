@@ -14,9 +14,10 @@ import {
   resolveScopedBusinessId,
 } from "./lib/businessContext";
 import {
-  allocateCostForSaleLine,
-  reverseCostLotsForSaleLine,
-} from "./lib/inventoryCostHelpers";
+  archiveShiftDetails,
+  updateDailyRollups,
+  updateDailyRollupsFromShiftSummary,
+} from "./lib/shiftReportHelpers";
 import { getRoleById } from "./lib/authHelpers";
 import { parseGroupLabel } from "./lib/groupLabelHelpers";
 import {
@@ -27,10 +28,14 @@ import {
   isSuperAdmin,
 } from "./lib/rbac";
 import {
-  archiveShiftDetails,
-  buildAndSaveShiftSummary,
-  updateDailyRollups,
-} from "./lib/shiftReportHelpers";
+  computeClosePreview,
+  finalizeShiftClose,
+  getSuggestedOpeningStock as loadSuggestedOpeningStock,
+} from "./lib/shiftCloseHelpers";
+import {
+  loadShiftCashEntries,
+  loadShiftStockReceipts,
+} from "./lib/shiftDetailHelpers";
 import {
   calculateLineTotal,
   generatePaymentBatchId,
@@ -38,7 +43,9 @@ import {
   getShiftCashSummary,
   getShiftSalesByPriceTier,
   getShiftSalesStats,
+  getShiftStockReconciliation,
   getShiftStockSummary,
+  getWritableOpenShiftForBusiness,
   isValidShiftAssignee,
   resolveShiftAssignees,
   sumStockMovementsByProduct,
@@ -90,6 +97,49 @@ async function requireOpenShiftContext(
   };
 }
 
+async function requireWritableShiftContext(
+  ctx: Parameters<typeof getKasirBusinessContext>[0],
+  sessionToken: string,
+) {
+  const context = await requireOpenShiftContext(ctx, sessionToken);
+  if (context.shift.status !== "OPEN") {
+    throw new Error("SHIFT_CLOSE_PENDING");
+  }
+  return context;
+}
+
+async function tryOpenShiftContext(
+  ctx: Parameters<typeof getKasirBusinessContext>[0],
+  sessionToken: string,
+) {
+  try {
+    const context = await getKasirBusinessContext(ctx, sessionToken);
+    if (!context.activeBusinessId) return null;
+
+    const shift = await getWritableOpenShiftForBusiness(
+      ctx,
+      context.activeBusinessId,
+    );
+    if (!shift) return null;
+
+    await assertBusinessAccess(
+      ctx,
+      context.user,
+      context.role,
+      context.activeBusinessId,
+    );
+
+    return {
+      ...context,
+      shift,
+      businessId: context.activeBusinessId,
+      role: context.role,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const getKasirContext = query({
   args: {
     sessionToken: v.string(),
@@ -103,6 +153,9 @@ export const getKasirContext = query({
           businesses: [],
           activeBusinessId: null,
           openShift: null,
+          shiftStatus: null,
+          closeRequest: null,
+          pendingCloseCount: 0,
           canManageShift: false,
           assignedStaff: null,
         };
@@ -122,6 +175,26 @@ export const getKasirContext = query({
       const canManage = activeBusinessId
         ? await canManageShift(ctx, user, role, activeBusinessId)
         : false;
+
+      const closeRequest = shift
+        ? await ctx.db
+            .query("shiftCloseRequests")
+            .withIndex("by_shiftId", (q) => q.eq("shiftId", shift._id))
+            .filter((q) => q.eq(q.field("status"), "PENDING"))
+            .first()
+        : null;
+
+      const pendingCloseCount =
+        activeBusinessId && canManage
+          ? (
+              await ctx.db
+                .query("shiftCloseRequests")
+                .withIndex("by_business_and_status", (q) =>
+                  q.eq("businessId", activeBusinessId).eq("status", "PENDING"),
+                )
+                .collect()
+            ).length
+          : 0;
 
       let assignedStaff: {
         id: string;
@@ -152,6 +225,9 @@ export const getKasirContext = query({
         })),
         activeBusinessId,
         openShift: shift,
+        shiftStatus: shift?.status ?? null,
+        closeRequest,
+        pendingCloseCount,
         canManageShift: canManage,
         assignedStaff,
       };
@@ -161,6 +237,9 @@ export const getKasirContext = query({
         businesses: [],
         activeBusinessId: null,
         openShift: null,
+        shiftStatus: null,
+        closeRequest: null,
+        pendingCloseCount: 0,
         canManageShift: false,
         assignedStaff: null,
       };
@@ -189,7 +268,9 @@ export const listShiftAssignees = query({
 export const getShiftStockContext = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const { shift } = await requireOpenShiftContext(ctx, args.sessionToken);
+    const context = await tryOpenShiftContext(ctx, args.sessionToken);
+    if (!context) return [];
+    const { shift } = context;
 
     const snapshots = await ctx.db
       .query("shiftStockSnapshots")
@@ -231,16 +312,18 @@ export const getShiftStockContext = query({
 export const getShiftCashPreview = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const { shift } = await requireOpenShiftContext(ctx, args.sessionToken);
-    return getShiftCashSummary(ctx, shift);
+    const context = await tryOpenShiftContext(ctx, args.sessionToken);
+    if (!context) return null;
+    return getShiftCashSummary(ctx, context.shift);
   },
 });
 
 export const getShiftLiveStats = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const { shift } = await requireOpenShiftContext(ctx, args.sessionToken);
-    return getShiftSalesStats(ctx, shift._id);
+    const context = await tryOpenShiftContext(ctx, args.sessionToken);
+    if (!context) return null;
+    return getShiftSalesStats(ctx, context.shift._id);
   },
 });
 
@@ -293,6 +376,71 @@ export const getShiftSummary = query({
   },
 });
 
+export const getShiftDetail = query({
+  args: {
+    sessionToken: v.string(),
+    shiftId: v.id("shifts"),
+  },
+  handler: async (ctx, args) => {
+    const { user, role, activeBusinessId } = await getKasirBusinessContext(
+      ctx,
+      args.sessionToken,
+    );
+    if (!activeBusinessId) throw new Error("NO_ACTIVE_BUSINESS");
+
+    const shift = await ctx.db.get(args.shiftId);
+    if (!shift || shift.businessId !== activeBusinessId) {
+      throw new Error("SHIFT_NOT_FOUND");
+    }
+
+    await assertBusinessAccess(ctx, user, role, activeBusinessId);
+
+    const saved = await ctx.db
+      .query("shiftSummaries")
+      .withIndex("by_shiftId", (q) => q.eq("shiftId", shift._id))
+      .unique();
+
+    const cashSummary = await getShiftCashSummary(ctx, shift);
+    const cashEntries = await loadShiftCashEntries(ctx, shift._id);
+    const stockReceipts = await loadShiftStockReceipts(ctx, shift._id);
+
+    const assignedStaff = shift.assignedStaffId
+      ? await ctx.db.get(shift.assignedStaffId)
+      : null;
+    const closedByUser = shift.closedBy ? await ctx.db.get(shift.closedBy) : null;
+
+    let stockReconciliation = saved?.stockReconciliation ?? [];
+    let salesByPriceTier = saved?.salesByPriceTier ?? [];
+    let totalRevenue = saved?.totalRevenue ?? 0;
+    let totalCogs = saved?.totalCogs ?? 0;
+    let grossProfit = saved?.grossProfit ?? 0;
+
+    if (!saved) {
+      const salesStats = await getShiftSalesStats(ctx, shift._id);
+      stockReconciliation = await getShiftStockReconciliation(ctx, shift._id);
+      salesByPriceTier = salesStats.salesByPriceTier;
+      totalRevenue = salesStats.paidRevenue;
+      totalCogs = salesStats.totalCogs;
+      grossProfit = salesStats.grossProfit;
+    }
+
+    return {
+      shift,
+      summary: saved,
+      cashSummary,
+      cashEntries,
+      stockReceipts,
+      stockReconciliation,
+      salesByPriceTier,
+      totalRevenue,
+      totalCogs,
+      grossProfit,
+      assignedStaffName: assignedStaff?.name ?? null,
+      closedByName: closedByUser?.name ?? null,
+    };
+  },
+});
+
 export const listShiftSummaries = query({
   args: {
     sessionToken: v.string(),
@@ -325,10 +473,11 @@ export const listShiftSummaries = query({
 export const listSaleLines = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const { shift, businessId } = await requireOpenShiftContext(
-      ctx,
-      args.sessionToken,
-    );
+    const context = await tryOpenShiftContext(ctx, args.sessionToken);
+    if (!context) {
+      return { lines: [] };
+    }
+    const { shift, businessId } = context;
 
     const lines = await ctx.db
       .query("saleLines")
@@ -560,7 +709,7 @@ export const addSaleLine = mutation({
     customerNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user, shift, businessId } = await requireOpenShiftContext(
+    const { user, shift, businessId } = await requireWritableShiftContext(
       ctx,
       args.sessionToken,
     );
@@ -621,7 +770,7 @@ export const updateSaleLine = mutation({
     customerNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { shift, businessId } = await requireOpenShiftContext(
+    const { shift, businessId } = await requireWritableShiftContext(
       ctx,
       args.sessionToken,
     );
@@ -691,7 +840,7 @@ export const deleteSaleLine = mutation({
     lineId: v.id("saleLines"),
   },
   handler: async (ctx, args) => {
-    const { shift } = await requireOpenShiftContext(ctx, args.sessionToken);
+    const { shift } = await requireWritableShiftContext(ctx, args.sessionToken);
 
     const line = await ctx.db.get(args.lineId);
     if (!line || line.shiftId !== shift._id) {
@@ -714,7 +863,7 @@ export const paySaleLines = mutation({
     amountReceived: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user, shift } = await requireOpenShiftContext(
+    const { user, shift } = await requireWritableShiftContext(
       ctx,
       args.sessionToken,
     );
@@ -745,37 +894,11 @@ export const paySaleLines = mutation({
     }
 
     for (const lineId of args.lineIds) {
-      const line = (await ctx.db.get(lineId))!;
-
-      let cogsTotal: number | undefined;
-      const product = await ctx.db.get(line.productId);
-      if (product?.type === "RETAIL") {
-        cogsTotal = await allocateCostForSaleLine(
-          ctx,
-          shift.businessId,
-          line.productId,
-          line.qty,
-          lineId,
-        );
-
-        await ctx.db.insert("stockMovements", {
-          shiftId: shift._id,
-          businessId: shift.businessId,
-          productId: line.productId,
-          type: "SALE",
-          qty: line.qty,
-          refId: lineId,
-          recordedBy: user._id,
-          createdAt: now,
-        });
-      }
-
       await ctx.db.patch(lineId, {
         paymentStatus: "PAID",
         paymentMethod: args.paymentMethod,
         paymentBatchId: batchId,
         paidAt: now,
-        cogsTotal,
         updatedAt: now,
       });
     }
@@ -814,7 +937,7 @@ export const voidSaleLinePayment = mutation({
     lineId: v.id("saleLines"),
   },
   handler: async (ctx, args) => {
-    const { shift } = await requireOpenShiftContext(ctx, args.sessionToken);
+    const { shift } = await requireWritableShiftContext(ctx, args.sessionToken);
 
     const line = await ctx.db.get(args.lineId);
     if (!line || line.shiftId !== shift._id) {
@@ -827,25 +950,11 @@ export const voidSaleLinePayment = mutation({
     const paidAt = line.paidAt ?? Date.now();
     const batchId = line.paymentBatchId;
 
-    const movements = await ctx.db
-      .query("stockMovements")
-      .withIndex("by_shiftId", (q) => q.eq("shiftId", shift._id))
-      .collect();
-
-    for (const movement of movements) {
-      if (movement.refId === args.lineId && movement.type === "SALE") {
-        await ctx.db.delete(movement._id);
-      }
-    }
-
-    await reverseCostLotsForSaleLine(ctx, args.lineId);
-
     await ctx.db.patch(args.lineId, {
       paymentStatus: "UNPAID",
       paymentMethod: undefined,
       paymentBatchId: undefined,
       paidAt: undefined,
-      cogsTotal: undefined,
       updatedAt: Date.now(),
     });
 
@@ -878,7 +987,7 @@ export const addCashEntry = mutation({
     note: v.string(),
   },
   handler: async (ctx, args) => {
-    const { user, shift, businessId } = await requireOpenShiftContext(
+    const { user, shift, businessId } = await requireWritableShiftContext(
       ctx,
       args.sessionToken,
     );
@@ -915,7 +1024,7 @@ export const addStockReceipt = mutation({
     items: v.array(receiptItem),
   },
   handler: async (ctx, args) => {
-    const { user, shift, businessId } = await requireOpenShiftContext(
+    const { user, shift, businessId } = await requireWritableShiftContext(
       ctx,
       args.sessionToken,
     );
@@ -1139,7 +1248,7 @@ export const addStockWriteOff = mutation({
     note: v.string(),
   },
   handler: async (ctx, args) => {
-    const { user, shift, businessId } = await requireOpenShiftContext(
+    const { user, shift, businessId } = await requireWritableShiftContext(
       ctx,
       args.sessionToken,
     );
@@ -1195,64 +1304,230 @@ export const closeShift = mutation({
     }
 
     const now = Date.now();
-
-    for (const item of args.closingStock) {
-      if (item.qty < 0) continue;
-
-      const snapshot = await ctx.db
-        .query("shiftStockSnapshots")
-        .withIndex("by_shift_and_product", (q) =>
-          q.eq("shiftId", shift._id).eq("productId", item.productId),
-        )
-        .unique();
-
-      if (!snapshot) continue;
-
-      await ctx.db.patch(snapshot._id, {
-        closingQty: item.qty,
-        updatedAt: now,
-      });
-
-      await ctx.db.insert("stockMovements", {
-        shiftId: shift._id,
-        businessId,
-        productId: item.productId,
-        type: "CLOSE_COUNT",
-        qty: item.qty,
-        recordedBy: user._id,
-        createdAt: now,
-      });
-    }
-
-    await ctx.db.patch(shift._id, {
-      status: "CLOSED",
-      closedBy: user._id,
-      closedAt: now,
-      closingCash: args.closingCash,
-      closingQris: args.closingQris,
-      updatedAt: now,
-    });
-
-    const closedShift = {
-      ...shift,
-      status: "CLOSED" as const,
-      closedBy: user._id,
-      closedAt: now,
-      closingCash: args.closingCash,
-      closingQris: args.closingQris,
-    };
-
-    const summary = await buildAndSaveShiftSummary(ctx, closedShift, now);
-    const cashSummary = await getShiftCashSummary(ctx, closedShift);
-    const salesByPriceTier = await getShiftSalesByPriceTier(ctx, shift._id);
+    const result = await finalizeShiftClose(
+      ctx,
+      shift,
+      user._id,
+      args.closingCash,
+      args.closingQris,
+      args.closingStock,
+      now,
+    );
 
     return {
       shiftId: shift._id,
-      summary,
-      cashSummary,
-      salesByPriceTier,
-      totalRevenue: summary.totalRevenue,
+      ...result,
     };
+  },
+});
+
+export const getSuggestedOpeningStock = query({
+  args: {
+    sessionToken: v.string(),
+    businessId: v.id("businesses"),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    await assertBusinessAccess(ctx, user, role, args.businessId);
+    return loadSuggestedOpeningStock(ctx, args.businessId);
+  },
+});
+
+export const getShiftClosePreview = query({
+  args: {
+    sessionToken: v.string(),
+    reportedCash: v.number(),
+    verifiedQris: v.optional(v.number()),
+    closingStock: v.array(closingStockItem),
+  },
+  handler: async (ctx, args) => {
+    const { shift } = await requireOpenShiftContext(ctx, args.sessionToken);
+    return computeClosePreview(
+      ctx,
+      shift,
+      args.reportedCash,
+      args.verifiedQris ?? 0,
+      args.closingStock,
+    );
+  },
+});
+
+export const submitShiftCloseRequest = mutation({
+  args: {
+    sessionToken: v.string(),
+    reportedCash: v.number(),
+    closingStock: v.array(closingStockItem),
+    staffNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user, shift, businessId } = await requireWritableShiftContext(
+      ctx,
+      args.sessionToken,
+    );
+
+    if (args.reportedCash < 0) {
+      throw new Error("INVALID_CASH");
+    }
+
+    const existing = await ctx.db
+      .query("shiftCloseRequests")
+      .withIndex("by_shiftId", (q) => q.eq("shiftId", shift._id))
+      .filter((q) => q.eq(q.field("status"), "PENDING"))
+      .first();
+
+    if (existing) {
+      throw new Error("CLOSE_REQUEST_ALREADY_PENDING");
+    }
+
+    const now = Date.now();
+    const requestId = await ctx.db.insert("shiftCloseRequests", {
+      shiftId: shift._id,
+      businessId,
+      status: "PENDING",
+      submittedBy: user._id,
+      submittedAt: now,
+      reportedCash: args.reportedCash,
+      closingStock: args.closingStock,
+      staffNote: args.staffNote?.trim() || undefined,
+    });
+
+    await ctx.db.patch(shift._id, {
+      status: "CLOSE_PENDING",
+      updatedAt: now,
+    });
+
+    return { requestId };
+  },
+});
+
+export const approveShiftCloseRequest = mutation({
+  args: {
+    sessionToken: v.string(),
+    requestId: v.id("shiftCloseRequests"),
+    verifiedQris: v.number(),
+    adminNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.status !== "PENDING") {
+      throw new Error("CLOSE_REQUEST_NOT_FOUND");
+    }
+
+    await assertCanManageShift(ctx, user, role, request.businessId);
+
+    const shift = await ctx.db.get(request.shiftId);
+    if (!shift || shift.status !== "CLOSE_PENDING") {
+      throw new Error("SHIFT_NOT_FOUND");
+    }
+
+    if (args.verifiedQris < 0) {
+      throw new Error("INVALID_CASH");
+    }
+
+    const now = Date.now();
+    const result = await finalizeShiftClose(
+      ctx,
+      shift,
+      user._id,
+      request.reportedCash,
+      args.verifiedQris,
+      request.closingStock,
+      now,
+    );
+
+    await ctx.db.patch(request._id, {
+      status: "APPROVED",
+      verifiedQris: args.verifiedQris,
+      reviewedBy: user._id,
+      reviewedAt: now,
+      adminNote: args.adminNote?.trim() || undefined,
+    });
+
+    return {
+      shiftId: shift._id,
+      ...result,
+    };
+  },
+});
+
+export const rejectShiftCloseRequest = mutation({
+  args: {
+    sessionToken: v.string(),
+    requestId: v.id("shiftCloseRequests"),
+    adminNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.status !== "PENDING") {
+      throw new Error("CLOSE_REQUEST_NOT_FOUND");
+    }
+
+    await assertCanManageShift(ctx, user, role, request.businessId);
+
+    const shift = await ctx.db.get(request.shiftId);
+    if (!shift || shift.status !== "CLOSE_PENDING") {
+      throw new Error("SHIFT_NOT_FOUND");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(request._id, {
+      status: "REJECTED",
+      reviewedBy: user._id,
+      reviewedAt: now,
+      adminNote: args.adminNote?.trim() || undefined,
+    });
+
+    await ctx.db.patch(shift._id, {
+      status: "OPEN",
+      updatedAt: now,
+    });
+
+    return { success: true };
+  },
+});
+
+export const listPendingCloseRequests = query({
+  args: {
+    sessionToken: v.string(),
+    businessId: v.id("businesses"),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    await assertCanManageShift(ctx, user, role, args.businessId);
+
+    const requests = await ctx.db
+      .query("shiftCloseRequests")
+      .withIndex("by_business_and_status", (q) =>
+        q.eq("businessId", args.businessId).eq("status", "PENDING"),
+      )
+      .collect();
+
+    const enriched = [];
+    for (const request of requests.sort(
+      (a, b) => a.submittedAt - b.submittedAt,
+    )) {
+      const shift = await ctx.db.get(request.shiftId);
+      const submitter = await ctx.db.get(request.submittedBy);
+      const preview = shift
+        ? await computeClosePreview(
+            ctx,
+            shift,
+            request.reportedCash,
+            0,
+            request.closingStock,
+          )
+        : null;
+
+      enriched.push({
+        ...request,
+        submitterName: submitter?.name ?? "—",
+        preview,
+      });
+    }
+
+    return enriched;
   },
 });
 

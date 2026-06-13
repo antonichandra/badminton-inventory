@@ -1,7 +1,12 @@
-import { Clock } from "lucide-react";
+import { Clock, History } from "lucide-react";
+import { Button } from "../../core/components/ui/Button";
 import { useLanguage } from "../../core/context/LanguageContext";
 
-export function ShiftNotOpenBlocked() {
+interface ShiftNotOpenBlockedProps {
+  onViewHistory?: () => void;
+}
+
+export function ShiftNotOpenBlocked({ onViewHistory }: ShiftNotOpenBlockedProps) {
   const { translate } = useLanguage();
 
   return (
@@ -15,6 +20,16 @@ export function ShiftNotOpenBlocked() {
       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
         {translate("kasirShiftNotOpenDesc")}
       </p>
+      {onViewHistory && (
+        <Button
+          variant="outline"
+          className="mt-4"
+          leftIcon={<History className="h-4 w-4" />}
+          onClick={onViewHistory}
+        >
+          {translate("kasirViewShiftHistory")}
+        </Button>
+      )}
     </div>
   );
 }

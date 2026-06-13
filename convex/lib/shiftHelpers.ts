@@ -1,5 +1,6 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { getRoleById } from "./authHelpers";
 
 export function calculateLineTotal(
   product: Doc<"products">,
@@ -16,6 +17,27 @@ export function calculateLineTotal(
 }
 
 export async function getOpenShiftForBusiness(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+) {
+  const open = await ctx.db
+    .query("shifts")
+    .withIndex("by_business_and_status", (q) =>
+      q.eq("businessId", businessId).eq("status", "OPEN"),
+    )
+    .first();
+
+  if (open) return open;
+
+  return ctx.db
+    .query("shifts")
+    .withIndex("by_business_and_status", (q) =>
+      q.eq("businessId", businessId).eq("status", "CLOSE_PENDING"),
+    )
+    .first();
+}
+
+export async function getWritableOpenShiftForBusiness(
   ctx: QueryCtx | MutationCtx,
   businessId: Id<"businesses">,
 ) {
@@ -89,6 +111,8 @@ export async function getShiftStockReconciliation(
     const soldQtyFromStock =
       snapshot.openingQty + received - closingQty - writeOff;
     const soldQtyFromLines = paidQtyByProduct.get(snapshot.productId) ?? 0;
+    const overInputQty = Math.max(0, soldQtyFromLines - soldQtyFromStock);
+    const missInputQty = Math.max(0, soldQtyFromStock - soldQtyFromLines);
 
     results.push({
       productId: snapshot.productId,
@@ -100,6 +124,8 @@ export async function getShiftStockReconciliation(
       soldQtyFromStock,
       soldQtyFromLines,
       qtyVariance: soldQtyFromStock - soldQtyFromLines,
+      overInputQty,
+      missInputQty,
     });
   }
 
@@ -153,6 +179,7 @@ export async function getShiftSalesByPriceTier(
 export async function getShiftSalesStats(
   ctx: QueryCtx | MutationCtx,
   shiftId: Id<"shifts">,
+  shiftCogs?: number,
 ) {
   const lines = await ctx.db
     .query("saleLines")
@@ -161,7 +188,6 @@ export async function getShiftSalesStats(
 
   let paidRevenue = 0;
   let unpaidRevenue = 0;
-  let totalCogs = 0;
   const productMap = new Map<
     string,
     { productId: Id<"products">; productName: string; qty: number; revenue: number }
@@ -171,7 +197,6 @@ export async function getShiftSalesStats(
     const product = await ctx.db.get(line.productId);
     if (line.paymentStatus === "PAID") {
       paidRevenue += line.lineTotal;
-      totalCogs += line.cogsTotal ?? 0;
       const key = line.productId;
       const existing = productMap.get(key);
       if (existing) {
@@ -188,6 +213,15 @@ export async function getShiftSalesStats(
     } else {
       unpaidRevenue += line.lineTotal;
     }
+  }
+
+  let totalCogs = shiftCogs;
+  if (totalCogs === undefined) {
+    const lots = await ctx.db
+      .query("shiftCogsLots")
+      .withIndex("by_shiftId", (q) => q.eq("shiftId", shiftId))
+      .collect();
+    totalCogs = lots.reduce((sum, lot) => sum + lot.qty * lot.unitCost, 0);
   }
 
   const topProducts = Array.from(productMap.values())
@@ -242,10 +276,11 @@ export async function getShiftCashSummary(
     .collect();
 
   const paidLines = saleLines.filter((line) => line.paymentStatus === "PAID");
-  const cashSales = paidLines
+  const totalSales = paidLines.reduce((sum, line) => sum + line.lineTotal, 0);
+  const recordedCashSales = paidLines
     .filter((line) => line.paymentMethod === "CASH")
     .reduce((sum, line) => sum + line.lineTotal, 0);
-  const qrisSales = paidLines
+  const recordedQrisSales = paidLines
     .filter((line) => line.paymentMethod === "QRIS")
     .reduce((sum, line) => sum + line.lineTotal, 0);
 
@@ -261,26 +296,37 @@ export async function getShiftCashSummary(
     .filter((entry) => entry.type === "DEPOSIT")
     .reduce((sum, entry) => sum + entry.amount, 0);
 
-  const expectedCash =
-    shift.openingCash + cashSales - expenses - deposits;
-  const actualCash = shift.closingCash ?? 0;
-  const actualQris = shift.closingQris ?? 0;
-  const expectedTotal = expectedCash + qrisSales;
-  const actualTotal = actualCash + actualQris;
-  const variance = actualTotal - expectedTotal;
+  const verifiedQris = shift.closingQris ?? 0;
+  const reportedCash = shift.closingCash ?? 0;
+  const expectedCashInDrawer =
+    shift.openingCash + totalSales - verifiedQris - expenses - deposits;
+  const cashVariance = reportedCash - expectedCashInDrawer;
+  const totalExpected = shift.openingCash + totalSales - expenses - deposits;
+  const totalActual = reportedCash + verifiedQris;
+  const totalVariance = totalActual - totalExpected;
 
   return {
     openingCash: shift.openingCash,
-    cashSales,
-    qrisSales,
+    totalSales,
+    recordedCashSales,
+    recordedQrisSales,
+    cashSales: recordedCashSales,
+    qrisSales: recordedQrisSales,
     expenses,
     deposits,
-    expectedCash,
-    expectedTotal,
-    actualCash,
-    actualQris,
-    actualTotal,
-    variance,
+    verifiedQris,
+    reportedCash,
+    expectedCashInDrawer,
+    cashVariance,
+    totalExpected,
+    totalActual,
+    totalVariance,
+    expectedCash: expectedCashInDrawer,
+    expectedTotal: totalExpected,
+    actualCash: reportedCash,
+    actualQris: verifiedQris,
+    actualTotal: totalActual,
+    variance: totalVariance,
   };
 }
 
@@ -302,8 +348,26 @@ export type ShiftAssignee = {
   _id: Id<"users">;
   name: string;
   email: string;
+  picture?: string;
+  roleName: string;
   businessRole: "STAFF" | "OWNER";
 };
+
+async function toShiftAssignee(
+  ctx: QueryCtx | MutationCtx,
+  member: Doc<"users">,
+  businessRole: "STAFF" | "OWNER",
+): Promise<ShiftAssignee> {
+  const role = await getRoleById(ctx, member.roleId);
+  return {
+    _id: member._id,
+    name: member.name,
+    email: member.email,
+    picture: member.picture,
+    roleName: role?.name ?? "STAFF",
+    businessRole,
+  };
+}
 
 export async function resolveShiftAssignees(
   ctx: QueryCtx | MutationCtx,
@@ -322,12 +386,7 @@ export async function resolveShiftAssignees(
     if (membership.role !== "STAFF") continue;
     const member = await ctx.db.get(membership.userId);
     if (!member || member.status !== "APPROVED") continue;
-    staffAssignees.push({
-      _id: member._id,
-      name: member.name,
-      email: member.email,
-      businessRole: "STAFF",
-    });
+    staffAssignees.push(await toShiftAssignee(ctx, member, "STAFF"));
   }
 
   if (staffAssignees.length > 0) {
@@ -346,12 +405,7 @@ export async function resolveShiftAssignees(
   for (const ownerId of ownerIds) {
     const owner = await ctx.db.get(ownerId);
     if (!owner || owner.status !== "APPROVED") continue;
-    ownerAssignees.push({
-      _id: owner._id,
-      name: owner.name,
-      email: owner.email,
-      businessRole: "OWNER",
-    });
+    ownerAssignees.push(await toShiftAssignee(ctx, owner, "OWNER"));
   }
 
   return ownerAssignees.sort((a, b) => a.name.localeCompare(b.name));

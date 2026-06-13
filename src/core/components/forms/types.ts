@@ -9,6 +9,7 @@ export interface SelectOption {
   description?: string;
   email?: string;
   picture?: string;
+  roleName?: string;
   sportSlug?: string;
   planName?: string;
   variant?: SelectOptionVariant;

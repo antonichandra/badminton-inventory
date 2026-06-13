@@ -460,20 +460,19 @@ export const setActiveBusiness = mutation({
   },
   handler: async (ctx, args) => {
     const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
-    const { assertBusinessAccess } = await import("./lib/businessContext");
-    const business = await assertBusinessAccess(
-      ctx,
-      user,
-      role,
-      args.businessId,
-    );
+    const accessible = await getAccessibleBusinesses(ctx, user, role);
+    const business = accessible.find((item) => item._id === args.businessId);
+
+    if (!business) {
+      throw new Error("FORBIDDEN");
+    }
 
     if (!isBusinessOperational(business)) {
       throw new Error("BUSINESS_NOT_ACTIVE");
     }
 
     await ctx.db.patch(user._id, {
-      activeBusinessId: args.businessId,
+      activeBusinessId: business._id,
       updatedAt: Date.now(),
     });
 
