@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Package } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { CourtlyLogo } from "./CourtlyLogo";
 import { GuestTopbar } from "./GuestTopbar";
 
 interface GuestLayoutProps {
@@ -12,15 +12,13 @@ export function GuestLayout({ children }: GuestLayoutProps) {
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:flex">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-slate-800">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-[#F1F5F9] dark:border-slate-800 dark:bg-slate-900 md:flex">
+        <div className="border-b border-slate-200 px-5 py-6 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white">
-              <Package className="h-5 w-5" />
-            </div>
+            <CourtlyLogo size={40} />
             <div>
-              <p className="text-sm font-bold text-slate-900 dark:text-white">
-                {translate("appName")}
+              <p className="text-sm font-bold tracking-[0.12em] text-slate-900 dark:text-white">
+                COURTLY
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {translate("appSubtitle")}
@@ -31,7 +29,7 @@ export function GuestLayout({ children }: GuestLayoutProps) {
 
         <div className="flex flex-1 flex-col justify-end p-5">
           <p className="text-xs leading-relaxed text-slate-400 dark:text-slate-500">
-            &copy; {new Date().getFullYear()} {translate("appName")}
+            &copy; {new Date().getFullYear()} Courtly
           </p>
         </div>
       </aside>

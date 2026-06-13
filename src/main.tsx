@@ -7,8 +7,11 @@ import { LanguageProvider } from "./core/context/LanguageContext";
 import { ThemeProvider } from "./core/context/ThemeContext";
 import { ToastProvider } from "./core/context/ToastContext";
 import { ErrorBoundary } from "./core/components/ErrorBoundary";
+import { registerSW } from "virtual:pwa-register";
 import "./index.css";
 import App from "./App.tsx";
+
+registerSW({ immediate: true });
 
 document.documentElement.classList.remove("dark");
 

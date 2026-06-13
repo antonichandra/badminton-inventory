@@ -1,10 +1,15 @@
 import { NavLink } from "react-router-dom";
-import { ChevronDown, LayoutDashboard, Package, Store, X } from "lucide-react";
+import { ChevronDown, Store, X } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { MenuItem } from "../../types/auth";
-import { MENU_ICONS } from "../config/menuIcons";
+import {
+  ANALYTICS_NAV,
+  DASHBOARD_NAV,
+  getSecondaryMenuItems,
+  getMasterGroup,
+} from "../config/navigation";
 import { useAuth } from "../context/AuthContext";
 import { useBusiness } from "../context/BusinessContext";
 import { useMenu } from "../hooks/useMenu";
@@ -12,15 +17,11 @@ import { useLanguage } from "../context/LanguageContext";
 import type { TranslationKey } from "../i18n";
 import { PlanBadge } from "./PlanBadge";
 import { Button } from "./ui/Button";
+import { NavMenuIcon } from "./nav/NavMenuIcon";
 
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
-}
-
-function MenuIcon({ itemId }: { itemId: string }) {
-  const Icon = MENU_ICONS[itemId] ?? Package;
-  return <Icon className="h-4 w-4 shrink-0" />;
 }
 
 function MenuLink({
@@ -47,7 +48,7 @@ function MenuLink({
         }`
       }
     >
-      <MenuIcon itemId={item.id} />
+      <NavMenuIcon itemId={item.id} />
       <span>{translate(item.labelKey as TranslationKey)}</span>
     </NavLink>
   );
@@ -73,7 +74,7 @@ function MenuGroup({
         className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800/50 dark:hover:text-slate-300"
       >
         <span className="flex items-center gap-2">
-          <MenuIcon itemId={item.id} />
+          <NavMenuIcon itemId={item.id} />
           {translate(item.labelKey as TranslationKey)}
         </span>
         <ChevronDown
@@ -104,8 +105,9 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   );
 
   const headerTitle = activeBusiness?.name ?? translate("appName");
-  const adminPlanName =
-    quotaSummary?.planName ?? translate("usersNoPlan");
+  const adminPlanName = quotaSummary?.planName ?? translate("usersNoPlan");
+  const masterGroup = getMasterGroup(menu);
+  const secondaryItems = getSecondaryMenuItems(menu);
 
   return (
     <>
@@ -132,9 +134,6 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
                 {headerTitle}
               </p>
-              {/* <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                {translate("appSubtitle")}
-              </p> */}
               {isAdmin && quotaSummary?.showQuota && (
                 <div className="mt-1.5">
                   <PlanBadge
@@ -157,48 +156,19 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </div>
 
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
-          <NavLink
-            to="/dashboard"
-            viewTransition
-            onClick={onClose}
-            className={({ isActive }) =>
-              `mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                isActive
-                  ? "bg-emerald-600 text-white"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              }`
-            }
-          >
-            <LayoutDashboard className="h-4 w-4 shrink-0" />
-            <span>{translate("navDashboard")}</span>
-          </NavLink>
+          <div className="mb-2">
+            <MenuLink item={DASHBOARD_NAV} onNavigate={onClose} />
+          </div>
+          <div className="mb-2">
+            <MenuLink item={ANALYTICS_NAV} onNavigate={onClose} />
+          </div>
 
-          <NavLink
-            to="/analytics"
-            viewTransition
-            onClick={onClose}
-            className={({ isActive }) =>
-              `mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                isActive
-                  ? "bg-emerald-600 text-white"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              }`
-            }
-          >
-            <MenuIcon itemId="analytics" />
-            <span>{translate("menuAnalytics")}</span>
-          </NavLink>
+          {secondaryItems.map((item) => (
+            <MenuLink key={item.id} item={item} onNavigate={onClose} />
+          ))}
 
-          {menu.map((item) =>
-            item.children ? (
-              <MenuGroup
-                key={item.id}
-                item={item}
-                onNavigate={onClose}
-              />
-            ) : (
-              <MenuLink key={item.id} item={item} onNavigate={onClose} />
-            ),
+          {masterGroup && (
+            <MenuGroup item={masterGroup} onNavigate={onClose} />
           )}
         </nav>
       </aside>
