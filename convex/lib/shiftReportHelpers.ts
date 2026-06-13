@@ -97,6 +97,71 @@ export async function buildAndSaveShiftSummary(
   return summaryData;
 }
 
+export async function updateDailyRollupsFromShiftSummary(
+  ctx: MutationCtx,
+  businessId: Id<"businesses">,
+  closedAt: number,
+) {
+  const date = formatDateKey(closedAt);
+
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const daySummaries = summaries.filter(
+    (summary) => formatDateKey(summary.closedAt) === date,
+  );
+
+  const productMap = new Map<
+    string,
+    { productId: Id<"products">; qty: number; revenue: number; cogs: number }
+  >();
+
+  let totalRevenue = 0;
+  let totalCogs = 0;
+
+  for (const summary of daySummaries) {
+    totalRevenue += summary.totalRevenue;
+    totalCogs += summary.totalCogs;
+    for (const product of summary.topProducts) {
+      const key = product.productId;
+      const entry = productMap.get(key) ?? {
+        productId: product.productId,
+        qty: 0,
+        revenue: 0,
+        cogs: 0,
+      };
+      entry.qty += product.qty;
+      entry.revenue += product.revenue;
+      productMap.set(key, entry);
+    }
+  }
+
+  const existing = await ctx.db
+    .query("businessDailyRollups")
+    .withIndex("by_business_and_date", (q) =>
+      q.eq("businessId", businessId).eq("date", date),
+    )
+    .unique();
+
+  const rollupData = {
+    businessId,
+    date,
+    totalRevenue,
+    totalCogs,
+    grossProfit: totalRevenue - totalCogs,
+    byProduct: Array.from(productMap.values()),
+    updatedAt: Date.now(),
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, rollupData);
+  } else {
+    await ctx.db.insert("businessDailyRollups", rollupData);
+  }
+}
+
 export async function updateDailyRollups(
   ctx: MutationCtx,
   businessId: Id<"businesses">,

@@ -8,7 +8,7 @@ import {
   isAdmin,
   isSuperAdmin,
 } from "./rbac";
-import { getBusinessOrThrow } from "./businessHelpers";
+import { getBusinessOrThrow, isBusinessOperational } from "./businessHelpers";
 
 async function getMemberBusinesses(
   ctx: QueryCtx | MutationCtx,
@@ -22,7 +22,7 @@ async function getMemberBusinesses(
   const businesses: Doc<"businesses">[] = [];
   for (const membership of memberships) {
     const business = await ctx.db.get(membership.businessId);
-    if (business?.isActive) {
+    if (business && isBusinessOperational(business)) {
       businesses.push(business);
     }
   }
@@ -38,7 +38,7 @@ export async function getAccessibleBusinesses(
   if (canManageAllBusinesses(role)) {
     const businesses = await ctx.db.query("businesses").collect();
     return businesses
-      .filter((business) => business.isActive)
+      .filter((business) => isBusinessOperational(business))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -48,7 +48,7 @@ export async function getAccessibleBusinesses(
       .withIndex("by_ownerId", (q) => q.eq("ownerId", user._id))
       .collect();
     return owned
-      .filter((business) => business.isActive)
+      .filter((business) => isBusinessOperational(business))
       .sort((a, b) => a.createdAt - b.createdAt);
   }
 
@@ -94,7 +94,11 @@ export async function assertBusinessAccess(
 ) {
   const business = await getBusinessOrThrow(ctx, businessId);
 
-  if (isSuperAdmin(role) || business.ownerId === user._id) {
+  if (
+    isSuperAdmin(role) ||
+    canManageAllBusinesses(role) ||
+    business.ownerId === user._id
+  ) {
     return business;
   }
 
@@ -103,7 +107,7 @@ export async function assertBusinessAccess(
     .withIndex("by_business_and_user", (q) =>
       q.eq("businessId", businessId).eq("userId", user._id),
     )
-    .unique();
+    .first();
 
   if (!membership) {
     throw new Error("FORBIDDEN");
@@ -198,7 +202,7 @@ export async function canManageShift(
     .withIndex("by_business_and_user", (q) =>
       q.eq("businessId", businessId).eq("userId", user._id),
     )
-    .unique();
+    .first();
 
   return membership?.role === "OWNER";
 }

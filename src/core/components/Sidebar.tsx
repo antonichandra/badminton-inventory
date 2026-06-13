@@ -119,7 +119,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-svh min-h-svh max-h-svh w-[min(100vw-1rem,16rem)] shrink-0 flex-col border-r border-slate-200 bg-white shadow-xl transition-transform duration-200 ease-in-out sm:w-64 lg:static lg:h-auto lg:min-h-screen lg:max-h-none lg:translate-x-0 lg:self-stretch lg:shadow-none dark:border-slate-800 dark:bg-slate-900 ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-svh min-h-svh max-h-svh w-[min(100vw-1rem,17rem)] shrink-0 flex-col border-r border-slate-200 bg-white shadow-xl transition-transform duration-200 ease-in-out sm:w-64 lg:static lg:h-auto lg:min-h-screen lg:max-h-none lg:translate-x-0 lg:self-stretch lg:shadow-none dark:border-slate-800 dark:bg-slate-900 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -132,9 +132,9 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
                 {headerTitle}
               </p>
-              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+              {/* <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                 {translate("appSubtitle")}
-              </p>
+              </p> */}
               {isAdmin && quotaSummary?.showQuota && (
                 <div className="mt-1.5">
                   <PlanBadge

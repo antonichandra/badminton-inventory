@@ -34,6 +34,11 @@ export function OpenShiftWizard({
     businessId,
   });
 
+  const suggestedOpening = useQuery(api.shifts.getSuggestedOpeningStock, {
+    sessionToken,
+    businessId,
+  });
+
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [assignedStaffId, setAssignedStaffId] = useState("");
   const [openingCash, setOpeningCash] = useState("0");
@@ -50,6 +55,8 @@ export function OpenShiftWizard({
         value: assignee._id,
         label: assignee.name,
         email: assignee.email,
+        picture: assignee.picture,
+        roleName: assignee.roleName,
         variant: "user" as const,
       })),
     [assignees],
@@ -71,6 +78,33 @@ export function OpenShiftWizard({
       })),
     [products, stockQty],
   );
+
+  useEffect(() => {
+    if (!suggestedOpening?.length || products.length === 0) return;
+    setStockQty((prev) => {
+      const hasValues = Object.values(prev).some((value) => Number(value) > 0);
+      if (hasValues) return prev;
+      const next: Record<string, string> = {};
+      for (const product of products) {
+        const suggested = suggestedOpening.find(
+          (item) => item.productId === product._id,
+        );
+        next[product._id] = String(suggested?.qty ?? 0);
+      }
+      return next;
+    });
+  }, [suggestedOpening, products]);
+
+  const handleFillSuggested = () => {
+    const next: Record<string, string> = {};
+    for (const product of products) {
+      const suggested = suggestedOpening?.find(
+        (item) => item.productId === product._id,
+      );
+      next[product._id] = String(suggested?.qty ?? 0);
+    }
+    setStockQty(next);
+  };
 
   const handleFillZero = () => {
     const next: Record<string, string> = {};
@@ -169,7 +203,12 @@ export function OpenShiftWizard({
             </p>
           ) : (
             <>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                {suggestedOpening && suggestedOpening.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={handleFillSuggested}>
+                    {translate("kasirFillSuggested")}
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={handleFillZero}>
                   {translate("kasirFillZero")}
                 </Button>

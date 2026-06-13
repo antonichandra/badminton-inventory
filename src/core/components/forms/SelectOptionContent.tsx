@@ -43,6 +43,7 @@ export function SelectOptionContent({
         name={option.label}
         email={option.email}
         picture={option.picture}
+        roleName={option.roleName}
         size={compact ? "sm" : "md"}
         className={className}
       />
@@ -79,7 +80,8 @@ export function optionMatchesSearch(option: SelectOption, term: string): boolean
   return (
     option.label.toLowerCase().includes(normalized) ||
     (option.description?.toLowerCase().includes(normalized) ?? false) ||
-    (option.email?.toLowerCase().includes(normalized) ?? false)
+    (option.email?.toLowerCase().includes(normalized) ?? false) ||
+    (option.roleName?.toLowerCase().includes(normalized) ?? false)
   );
 }
 
@@ -90,6 +92,7 @@ export function isRichSelectOption(option: SelectOption): boolean {
       option.variant ||
       option.description ||
       option.email ||
-      option.picture,
+      option.picture ||
+      option.roleName,
   );
 }

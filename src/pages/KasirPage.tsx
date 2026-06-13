@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { Plus, CreditCard, MoreHorizontal } from "lucide-react";
 import { api } from "../../convex/_generated/api";
@@ -24,6 +24,8 @@ import { ShiftLiveStats } from "./kasir/ShiftLiveStats";
 import { ShiftNotOpenBlocked } from "./kasir/ShiftNotOpenBlocked";
 import { ShiftReportPanel } from "./kasir/ShiftReportPanel";
 import { ShiftSummaryView } from "./kasir/ShiftSummaryView";
+import { ReviewCloseShiftPanel } from "./kasir/ReviewCloseShiftPanel";
+import { SubmitCloseShiftWizard } from "./kasir/SubmitCloseShiftWizard";
 import {
   formatRupiah,
   formatShiftOpenedAt,
@@ -31,7 +33,14 @@ import {
   type SaleLineView,
 } from "./kasir/utils";
 
-type KasirView = "hub" | "open" | "close" | "summary" | "report";
+type KasirView =
+  | "hub"
+  | "open"
+  | "close"
+  | "submit-close"
+  | "review-close"
+  | "summary"
+  | "report";
 
 interface PaySuccessState {
   paymentBatchId: string;
@@ -49,6 +58,7 @@ export function KasirPage() {
   const [closedShiftId, setClosedShiftId] = useState<Id<"shifts"> | null>(
     null,
   );
+  const [summaryReturnView, setSummaryReturnView] = useState<KasirView>("hub");
   const [recordOpen, setRecordOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [payMode, setPayMode] = useState(false);
@@ -61,6 +71,20 @@ export function KasirPage() {
   );
   const [defaultGroupLabel, setDefaultGroupLabel] = useState("");
   const [paySuccess, setPaySuccess] = useState<PaySuccessState | null>(null);
+  const prevBusinessIdRef = useRef(activeBusinessId);
+
+  useEffect(() => {
+    if (prevBusinessIdRef.current === activeBusinessId) return;
+    prevBusinessIdRef.current = activeBusinessId;
+    setView("hub");
+    setClosedShiftId(null);
+    setRecordOpen(false);
+    setActionsOpen(false);
+    setPayMode(false);
+    setPaySheetOpen(false);
+    setSelectedLineIds(new Set());
+    setPaySuccess(null);
+  }, [activeBusinessId]);
 
   const kasirContext = useQuery(
     api.shifts.getKasirContext,
@@ -72,14 +96,21 @@ export function KasirPage() {
       : "skip",
   );
 
+  const openShift =
+    kasirContext?.openShift &&
+    kasirContext.activeBusinessId &&
+    kasirContext.openShift.businessId === kasirContext.activeBusinessId
+      ? kasirContext.openShift
+      : null;
+
   const saleLinesData = useQuery(
     api.shifts.listSaleLines,
-    sessionToken && kasirContext?.openShift ? { sessionToken } : "skip",
+    sessionToken && openShift ? { sessionToken } : "skip",
   );
 
   const cashPreview = useQuery(
     api.shifts.getShiftCashPreview,
-    sessionToken && kasirContext?.openShift ? { sessionToken } : "skip",
+    sessionToken && openShift ? { sessionToken } : "skip",
   );
 
   const assigneeData = useQuery(
@@ -93,8 +124,10 @@ export function KasirPage() {
   );
 
   const lines = (saleLinesData?.lines ?? []) as SaleLineView[];
-  const openShift = kasirContext?.openShift;
   const canManageShift = kasirContext?.canManageShift ?? false;
+  const shiftIsPending = kasirContext?.shiftStatus === "CLOSE_PENDING";
+  const pendingCloseCount = kasirContext?.pendingCloseCount ?? 0;
+  const transactionsLocked = payMode || shiftIsPending;
   const assignedStaff = kasirContext?.assignedStaff;
 
   const onDutyStaff = useMemo(() => {
@@ -167,10 +200,15 @@ export function KasirPage() {
   if (view === "summary" && closedShiftId) {
     return (
       <PermissionGuard permission="kasir">
-        <PageHeader title={translate("menuKasir")} />
+        <PageHeader title={translate("kasirSummary")} />
         <ShiftSummaryView
           sessionToken={sessionToken}
           shiftId={closedShiftId}
+          showOpenNewShift={summaryReturnView !== "report"}
+          onBack={() => {
+            setClosedShiftId(null);
+            setView(summaryReturnView === "report" || !openShift ? "report" : "hub");
+          }}
           onOpenNewShift={() => {
             setClosedShiftId(null);
             setView("open");
@@ -190,7 +228,12 @@ export function KasirPage() {
         <ShiftReportPanel
           sessionToken={sessionToken}
           businessId={kasirContext!.activeBusinessId!}
-          onBack={() => setView(openShift ? "hub" : "open")}
+          onBack={() => setView(openShift ? "hub" : "report")}
+          onViewShift={(shiftId) => {
+            setClosedShiftId(shiftId);
+            setSummaryReturnView("report");
+            setView("summary");
+          }}
         />
       </PermissionGuard>
     );
@@ -203,6 +246,18 @@ export function KasirPage() {
           title={translate("menuKasir")}
           subtitle={translate("kasirNoOpenShift")}
         />
+        <div className="mb-4 flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSummaryReturnView("report");
+              setView("report");
+            }}
+          >
+            {translate("kasirViewShiftHistory")}
+          </Button>
+        </div>
         {canManageShift ? (
           <OpenShiftWizard
             sessionToken={sessionToken}
@@ -210,8 +265,44 @@ export function KasirPage() {
             onComplete={() => setView("hub")}
           />
         ) : (
-          <ShiftNotOpenBlocked />
+          <ShiftNotOpenBlocked
+            onViewHistory={() => {
+              setSummaryReturnView("report");
+              setView("report");
+            }}
+          />
         )}
+      </PermissionGuard>
+    );
+  }
+
+  if (view === "submit-close") {
+    return (
+      <PermissionGuard permission="kasir">
+        <PageHeader title={translate("kasirSubmitCloseTitle")} />
+        <SubmitCloseShiftWizard
+          sessionToken={sessionToken}
+          onCancel={() => setView("hub")}
+          onComplete={() => setView("hub")}
+        />
+      </PermissionGuard>
+    );
+  }
+
+  if (view === "review-close" && kasirContext?.activeBusinessId) {
+    return (
+      <PermissionGuard permission="kasir">
+        <PageHeader title={translate("kasirReviewCloseTitle")} />
+        <ReviewCloseShiftPanel
+          sessionToken={sessionToken}
+          businessId={kasirContext.activeBusinessId}
+          onCancel={() => setView("hub")}
+          onComplete={(shiftId) => {
+            setClosedShiftId(shiftId);
+            setSummaryReturnView("report");
+            setView("summary");
+          }}
+        />
       </PermissionGuard>
     );
   }
@@ -225,6 +316,7 @@ export function KasirPage() {
           onCancel={() => setView("hub")}
           onComplete={(shiftId) => {
             setClosedShiftId(shiftId);
+            setSummaryReturnView("report");
             setView("summary");
           }}
         />
@@ -241,9 +333,9 @@ export function KasirPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           {onDutyStaff ? (
             <div className="min-w-0 flex-1">
-              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              {/* <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 {translate("kasirOnDuty")}
-              </p>
+              </p> */}
               <UserInfoRow
                 name={onDutyStaff.name}
                 email={onDutyStaff.email}
@@ -255,7 +347,7 @@ export function KasirPage() {
           ) : (
             <div />
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -263,13 +355,31 @@ export function KasirPage() {
             >
               {translate("kasirReport")}
             </Button>
-            {canManageShift && (
+            {canManageShift && pendingCloseCount > 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setView("review-close")}
+              >
+                {translate("kasirReviewClose")} ({pendingCloseCount})
+              </Button>
+            )}
+            {canManageShift && !shiftIsPending && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setView("close")}
               >
                 {translate("kasirCloseShift")}
+              </Button>
+            )}
+            {!shiftIsPending && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setView("submit-close")}
+              >
+                {translate("kasirSubmitClose")}
               </Button>
             )}
           </div>
@@ -292,12 +402,18 @@ export function KasirPage() {
           <ShiftLiveStats sessionToken={sessionToken} />
         </div>
 
+        {shiftIsPending && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            {translate("kasirClosePendingBanner")}
+          </div>
+        )}
+
         <div className="mt-3 flex gap-2">
           <Button
             className="flex-1"
             leftIcon={<Plus className="h-4 w-4" />}
             onClick={() => setRecordOpen(true)}
-            disabled={payMode}
+            disabled={transactionsLocked}
           >
             {translate("kasirRecord")}
           </Button>
@@ -309,7 +425,7 @@ export function KasirPage() {
               setPayMode(true);
               setSelectedLineIds(new Set());
             }}
-            disabled={payMode}
+            disabled={transactionsLocked}
           >
             {translate("kasirPay")}
           </Button>
@@ -317,7 +433,7 @@ export function KasirPage() {
             variant="outline"
             leftIcon={<MoreHorizontal className="h-4 w-4" />}
             onClick={() => setActionsOpen(true)}
-            disabled={payMode}
+            disabled={transactionsLocked}
           >
             {translate("kasirActions")}
           </Button>

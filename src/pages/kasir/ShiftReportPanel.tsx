@@ -10,12 +10,14 @@ interface ShiftReportPanelProps {
   sessionToken: string;
   businessId: Id<"businesses">;
   onBack: () => void;
+  onViewShift?: (shiftId: Id<"shifts">) => void;
 }
 
 export function ShiftReportPanel({
   sessionToken,
   businessId,
   onBack,
+  onViewShift,
 }: ShiftReportPanelProps) {
   const { translate } = useLanguage();
 
@@ -136,7 +138,11 @@ export function ShiftReportPanel({
               key={summary._id}
               className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 dark:border-slate-800"
             >
-              <div className="min-w-0">
+              <button
+                type="button"
+                className="min-w-0 flex-1 text-left hover:opacity-80"
+                onClick={() => onViewShift?.(summary.shiftId)}
+              >
                 <p className="text-sm font-medium">
                   {new Date(summary.closedAt).toLocaleString("id-ID")}
                 </p>
@@ -145,11 +151,22 @@ export function ShiftReportPanel({
                   {translate("kasirGrossProfit")}{" "}
                   {formatRupiah(summary.grossProfit)}
                 </p>
+              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                {onViewShift && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onViewShift(summary.shiftId)}
+                  >
+                    {translate("kasirViewDetail")}
+                  </Button>
+                )}
+                <ExportShiftButton
+                  sessionToken={sessionToken}
+                  shiftId={summary.shiftId}
+                />
               </div>
-              <ExportShiftButton
-                sessionToken={sessionToken}
-                shiftId={summary.shiftId}
-              />
             </div>
           ))}
           {(summaries ?? []).length === 0 && (

@@ -41,7 +41,17 @@ export const businessStatus = v.union(
 
 export const productType = v.union(v.literal("RETAIL"), v.literal("RENTAL"));
 
-export const shiftStatus = v.union(v.literal("OPEN"), v.literal("CLOSED"));
+export const shiftStatus = v.union(
+  v.literal("OPEN"),
+  v.literal("CLOSE_PENDING"),
+  v.literal("CLOSED"),
+);
+
+export const shiftCloseRequestStatus = v.union(
+  v.literal("PENDING"),
+  v.literal("APPROVED"),
+  v.literal("REJECTED"),
+);
 
 export const shiftArchiveStatus = v.union(
   v.literal("ACTIVE"),
@@ -65,6 +75,8 @@ export const stockMovementType = v.union(
   v.literal("WRITEOFF"),
   v.literal("OPENING"),
   v.literal("CLOSE_COUNT"),
+  v.literal("CONSUMPTION"),
+  v.literal("ADJUSTMENT"),
 );
 
 const priceTierEntry = v.object({
@@ -92,6 +104,13 @@ const stockReconEntry = v.object({
   closingQty: v.number(),
   writeOffQty: v.number(),
   qtyVariance: v.number(),
+  overInputQty: v.number(),
+  missInputQty: v.number(),
+});
+
+const closingStockEntry = v.object({
+  productId: v.id("products"),
+  qty: v.number(),
 });
 
 const rollupProductEntry = v.object({
@@ -211,6 +230,7 @@ export default defineSchema({
     rentalPricePerHour: v.optional(v.number()),
     unit: v.string(),
     trackExpiry: v.optional(v.boolean()),
+    defaultUnitCost: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -400,6 +420,16 @@ export default defineSchema({
     expenses: v.number(),
     deposits: v.number(),
     variance: v.number(),
+    totalSales: v.optional(v.number()),
+    verifiedQris: v.optional(v.number()),
+    reportedCash: v.optional(v.number()),
+    expectedCashInDrawer: v.optional(v.number()),
+    cashVariance: v.optional(v.number()),
+    totalVariance: v.optional(v.number()),
+    overInputQtyTotal: v.optional(v.number()),
+    missInputQtyTotal: v.optional(v.number()),
+    recordedCashSales: v.optional(v.number()),
+    recordedQrisSales: v.optional(v.number()),
     salesByPriceTier: v.array(priceTierEntry),
     topProducts: v.array(topProductEntry),
     stockReconciliation: v.array(stockReconEntry),
@@ -407,6 +437,33 @@ export default defineSchema({
   })
     .index("by_shiftId", ["shiftId"])
     .index("by_businessId", ["businessId"]),
+
+  shiftCloseRequests: defineTable({
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    status: shiftCloseRequestStatus,
+    submittedBy: v.id("users"),
+    submittedAt: v.number(),
+    reportedCash: v.number(),
+    closingStock: v.array(closingStockEntry),
+    staffNote: v.optional(v.string()),
+    verifiedQris: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.number()),
+    adminNote: v.optional(v.string()),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_business_and_status", ["businessId", "status"]),
+
+  shiftCogsLots: defineTable({
+    shiftId: v.id("shifts"),
+    businessId: v.id("businesses"),
+    productId: v.id("products"),
+    receiptItemId: v.optional(v.id("stockReceiptItems")),
+    qty: v.number(),
+    unitCost: v.number(),
+    isEstimated: v.boolean(),
+  }).index("by_shiftId", ["shiftId"]),
 
   businessDailyRollups: defineTable({
     businessId: v.id("businesses"),

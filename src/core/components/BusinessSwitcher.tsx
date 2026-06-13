@@ -2,13 +2,16 @@ import { Building2, ChevronDown } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { useBusiness } from "../context/BusinessContext";
 import { useLanguage } from "../context/LanguageContext";
+import { useToast } from "../context/ToastContext";
 import { cn } from "../utils/cn";
 
 export function BusinessSwitcher() {
   const { translate } = useLanguage();
+  const { showToast } = useToast();
   const { businesses, activeBusiness, showSwitcher, setActiveBusiness } =
     useBusiness();
   const [open, setOpen] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,9 +32,27 @@ export function BusinessSwitcher() {
     return null;
   }
 
-  const handleSelect = (businessId: typeof activeBusiness._id) => {
-    void setActiveBusiness(businessId);
-    setOpen(false);
+  const handleSelect = async (businessId: typeof activeBusiness._id) => {
+    if (isSwitching || businessId === activeBusiness._id) {
+      setOpen(false);
+      return;
+    }
+
+    setIsSwitching(true);
+    try {
+      await setActiveBusiness(businessId);
+      setOpen(false);
+    } catch (error) {
+      const raw = String(error);
+      const message = raw.includes("BUSINESS_NOT_ACTIVE")
+        ? translate("businessSwitchNotActive")
+        : raw.includes("FORBIDDEN")
+          ? translate("businessSwitchForbidden")
+          : translate("businessSwitchError");
+      showToast({ type: "error", message });
+    } finally {
+      setIsSwitching(false);
+    }
   };
 
   return (
@@ -39,7 +60,8 @@ export function BusinessSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex max-w-[220px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 lg:max-w-[280px] dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+        disabled={isSwitching}
+        className="flex max-w-[220px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 disabled:opacity-60 lg:max-w-[280px] dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
       >
         <Building2 className="h-4 w-4 shrink-0 text-emerald-600" />
         <span className="truncate font-medium text-slate-900 dark:text-white">
@@ -62,7 +84,8 @@ export function BusinessSwitcher() {
                 <li key={business._id}>
                   <button
                     type="button"
-                    onClick={() => handleSelect(business._id)}
+                    onClick={() => void handleSelect(business._id)}
+                    disabled={isSwitching}
                     className={cn(
                       "flex w-full flex-col items-start px-3 py-2 text-left text-sm transition-colors",
                       isActive

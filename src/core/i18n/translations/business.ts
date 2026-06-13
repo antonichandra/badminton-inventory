@@ -50,6 +50,10 @@ export const business = {
     businessCancelDeleteSuccess: "Pengajuan hapus bisnis berhasil dibatalkan.",
     businessCancelDeleteError: "Gagal membatalkan pengajuan hapus bisnis.",
     businessSwitcherLabel: "Bisnis aktif",
+    businessSwitchError: "Gagal mengganti bisnis aktif.",
+    businessSwitchNotActive:
+      "Bisnis tidak aktif atau sedang dalam proses penghapusan.",
+    businessSwitchForbidden: "Anda tidak memiliki akses ke bisnis ini.",
     businessFilterSearch: "Nama Bisnis",
     businessFilterSearchPlaceholder: "Cari nama bisnis...",
     businessFilterOwner: "Pemilik",
@@ -166,6 +170,10 @@ export const business = {
     businessCancelDeleteSuccess: "Business deletion request cancelled.",
     businessCancelDeleteError: "Failed to cancel deletion request.",
     businessSwitcherLabel: "Active business",
+    businessSwitchError: "Failed to switch active business.",
+    businessSwitchNotActive:
+      "Business is inactive or pending deletion.",
+    businessSwitchForbidden: "You do not have access to this business.",
     businessFilterSearch: "Business Name",
     businessFilterSearchPlaceholder: "Search business name...",
     businessFilterOwner: "Owner",

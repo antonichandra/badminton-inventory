@@ -7,6 +7,7 @@ import { Button } from "../../core/components/ui/Button";
 import { ConfirmModal } from "../../core/components/ui/ConfirmModal";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
+import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
 import { formatRupiah } from "./utils";
 
 interface CloseShiftWizardProps {
@@ -56,9 +57,29 @@ export function CloseShiftWizard({
     if (!cashPreview) return null;
     const actualCash = Number(closingCash) || 0;
     const actualQris = Number(closingQris) || 0;
-    const actualTotal = actualCash + actualQris;
-    const variance = actualTotal - cashPreview.expectedTotal;
-    return { ...cashPreview, actualCash, actualQris, actualTotal, variance };
+    const totalSales = cashPreview.totalSales ?? 0;
+    const expectedCashInDrawer =
+      cashPreview.openingCash +
+      totalSales -
+      actualQris -
+      cashPreview.expenses -
+      cashPreview.deposits;
+    const totalExpected =
+      cashPreview.openingCash + totalSales - cashPreview.expenses - cashPreview.deposits;
+    return {
+      totalSales,
+      expectedCashInDrawer,
+      actualCash,
+      actualQris,
+      actualTotal: actualCash + actualQris,
+      totalVariance: actualCash + actualQris - totalExpected,
+      cashVariance: actualCash - expectedCashInDrawer,
+      expenses: cashPreview.expenses,
+      deposits: cashPreview.deposits,
+      recordedCashSales: cashPreview.recordedCashSales,
+      recordedQrisSales: cashPreview.recordedQrisSales,
+      openingCash: cashPreview.openingCash,
+    };
   }, [cashPreview, closingCash, closingQris]);
 
   const totalRevenue = liveStats?.paidRevenue ?? 0;
@@ -168,10 +189,11 @@ export function CloseShiftWizard({
 
           <div className="rounded-lg bg-slate-50 p-4 text-sm dark:bg-slate-800">
             <p>
-              {translate("kasirCash")}: {formatRupiah(cashSummary.cashSales)}
+              {translate("kasirTotalSales")}: {formatRupiah(cashSummary.totalSales)}
             </p>
-            <p>
-              {translate("kasirQris")}: {formatRupiah(cashSummary.qrisSales)}
+            <p className="text-xs text-slate-500">
+              {translate("kasirCash")}: {formatRupiah(cashSummary.recordedCashSales)}{" "}
+              · {translate("kasirQris")}: {formatRupiah(cashSummary.recordedQrisSales)}
             </p>
             <p>
               {translate("kasirCashExpense")}:{" "}
@@ -181,6 +203,7 @@ export function CloseShiftWizard({
               {translate("kasirCashDeposit")}:{" "}
               {formatRupiah(cashSummary.deposits)}
             </p>
+            <p className="text-xs text-slate-500">{translate("kasirSalesInfoNote")}</p>
           </div>
 
           <div className="flex justify-between">
@@ -230,33 +253,20 @@ export function CloseShiftWizard({
             </div>
           )}
 
-          <div className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-700">
-            <p>
-              {translate("kasirExpected")}:{" "}
-              {formatRupiah(cashSummary.expectedTotal)}
-            </p>
-            <p>
-              {translate("kasirActual")}: {formatRupiah(cashSummary.actualTotal)}
-            </p>
-            <p
-              className={
-                cashSummary.variance < 0
-                  ? "font-semibold text-red-600"
-                  : "font-semibold text-emerald-600"
-              }
-            >
-              {translate("kasirVariance")}: {formatRupiah(cashSummary.variance)}
-            </p>
-            <p className="mt-2">
-              {translate("kasirRevenue")}: {formatRupiah(totalRevenue)}
-            </p>
-            {liveStats && (
-              <p>
-                {translate("kasirGrossProfit")}:{" "}
-                {formatRupiah(liveStats.grossProfit)}
-              </p>
-            )}
-          </div>
+          <ShiftCashBreakdown
+            openingCash={cashSummary.openingCash}
+            totalSales={cashSummary.totalSales}
+            verifiedQris={cashSummary.actualQris}
+            expenses={cashSummary.expenses}
+            deposits={cashSummary.deposits}
+            expectedCashInDrawer={cashSummary.expectedCashInDrawer}
+            reportedCash={cashSummary.actualCash}
+            cashVariance={cashSummary.cashVariance}
+            totalRevenue={totalRevenue}
+            totalCogs={liveStats?.totalCogs}
+            grossProfit={liveStats?.grossProfit}
+            compact
+          />
 
           <div className="flex justify-between">
             <Button variant="ghost" onClick={() => setStep(2)}>
