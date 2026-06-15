@@ -75,11 +75,13 @@ export function UsersPage() {
     api.usersActions.registerPendingAdminWithGoogle,
   );
   const approvePendingAdmin = useMutation(api.users.approvePendingAdmin);
+  const approvePendingUser = useMutation(api.users.approvePendingUser);
   const assignPlanToUser = useMutation(api.plans.assignPlanToUser);
   const updateUserAccess = useMutation(api.users.updateUserAccess);
   const revokeUser = useMutation(api.users.revokeUser);
   const resendUser = useMutation(api.users.resendUser);
   const deleteUser = useMutation(api.users.deleteUser);
+  const deletePendingUser = useMutation(api.users.deletePendingUser);
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [userToApprove, setUserToApprove] = useState<MasterUserRow | null>(null);
@@ -242,33 +244,58 @@ export function UsersPage() {
     if (!userToApprove || !sessionToken) {
       showToast({
         type: "error",
-        message: translate("usersApproveAdminError"),
+        message: translate(
+          userToApprove?.roleName === "PENDING"
+            ? "usersApprovePendingError"
+            : "usersApproveAdminError",
+        ),
       });
       return;
     }
 
+    const isPendingRoleUser = userToApprove.roleName === "PENDING";
     setIsApproving(true);
 
     try {
-      const result = await approvePendingAdmin({
-        sessionToken,
-        userId: userToApprove._id,
-      });
+      const result = isPendingRoleUser
+        ? await approvePendingUser({
+            sessionToken,
+            userId: userToApprove._id,
+          })
+        : await approvePendingAdmin({
+            sessionToken,
+            userId: userToApprove._id,
+          });
       setUserToApprove(null);
       showToast({
         type: "success",
-        message: `${translate("usersApproveAdminSuccess")} (${result.email})`,
+        message: `${translate(
+          isPendingRoleUser
+            ? "usersApprovePendingSuccess"
+            : "usersApproveAdminSuccess",
+        )} (${result.email})`,
       });
     } catch (error) {
-      console.error("Approve admin failed:", error);
+      console.error("Approve user failed:", error);
       showToast({
         type: "error",
-        message: translate("usersApproveAdminError"),
+        message: translate(
+          isPendingRoleUser
+            ? "usersApprovePendingError"
+            : "usersApproveAdminError",
+        ),
       });
     } finally {
       setIsApproving(false);
     }
-  }, [approvePendingAdmin, sessionToken, showToast, translate, userToApprove]);
+  }, [
+    approvePendingAdmin,
+    approvePendingUser,
+    sessionToken,
+    showToast,
+    translate,
+    userToApprove,
+  ]);
 
   const handleRequestSavePlan = useCallback(
     (planId: Id<"plans">) => {
@@ -383,34 +410,57 @@ export function UsersPage() {
   const handleConfirmDelete = useCallback(async () => {
     if (!userToDelete || !sessionToken) return;
 
+    const isPendingRoleUser =
+      userToDelete.status === "PENDING" && userToDelete.roleName === "PENDING";
+
     setActingUserId(userToDelete._id);
 
     try {
-      await deleteUser({
-        sessionToken,
-        userId: userToDelete._id,
-      });
+      if (isPendingRoleUser) {
+        await deletePendingUser({
+          sessionToken,
+          userId: userToDelete._id,
+        });
+      } else {
+        await deleteUser({
+          sessionToken,
+          userId: userToDelete._id,
+        });
+      }
       setUserToDelete(null);
       showToast({
         type: "success",
-        message: translate("businessStaffDeleteSuccess"),
+        message: translate(
+          isPendingRoleUser
+            ? "usersDeletePendingSuccess"
+            : "businessStaffDeleteSuccess",
+        ),
       });
     } catch (error) {
       const message = String(error);
       showToast({
         type: "error",
-        message: message.includes("CANNOT_DELETE_SELF")
-          ? translate("usersEditAccessSelf")
-          : message.includes("CANNOT_DELETE_NON_STAFF")
-            ? translate("businessStaffDeleteNonStaff")
-            : message.includes("USER_NOT_DELETABLE")
-              ? translate("businessStaffDeleteNotRevoked")
-              : translate("businessStaffActionError"),
+        message: isPendingRoleUser
+          ? translate("usersDeletePendingError")
+          : message.includes("CANNOT_DELETE_SELF")
+            ? translate("usersEditAccessSelf")
+            : message.includes("CANNOT_DELETE_NON_STAFF")
+              ? translate("businessStaffDeleteNonStaff")
+              : message.includes("USER_NOT_DELETABLE")
+                ? translate("businessStaffDeleteNotRevoked")
+                : translate("businessStaffActionError"),
       });
     } finally {
       setActingUserId(null);
     }
-  }, [deleteUser, sessionToken, showToast, translate, userToDelete]);
+  }, [
+    deletePendingUser,
+    deleteUser,
+    sessionToken,
+    showToast,
+    translate,
+    userToDelete,
+  ]);
 
   const handleRequestSaveRole = useCallback(
     (roleId: Id<"roles">) => {
@@ -519,6 +569,7 @@ export function UsersPage() {
           pendingInvite: translate("usersBusinessPendingInvite"),
           actions: translate("usersColActions"),
           approveAdmin: translate("usersApproveAdmin"),
+          approvePending: translate("usersApprovePending"),
           editPlan: translate("usersEditPlan"),
           editRole: translate("businessStaffEditRole"),
           revoke: translate("businessStaffRevoke"),
@@ -656,15 +707,27 @@ export function UsersPage() {
           }
         }}
         onConfirm={() => void handleConfirmApproveAdmin()}
-        title={translate("usersApproveAdminConfirmTitle")}
+        title={translate(
+          userToApprove?.roleName === "PENDING"
+            ? "usersApprovePendingConfirmTitle"
+            : "usersApproveAdminConfirmTitle",
+        )}
         description={
           userToApprove
-            ? translate("usersApproveAdminConfirmDesc")
+            ? translate(
+                userToApprove.roleName === "PENDING"
+                  ? "usersApprovePendingConfirmDesc"
+                  : "usersApproveAdminConfirmDesc",
+              )
                 .replace("{name}", userToApprove.name)
                 .replace("{email}", userToApprove.email)
             : undefined
         }
-        confirmLabel={translate("usersApproveAdmin")}
+        confirmLabel={translate(
+          userToApprove?.roleName === "PENDING"
+            ? "usersApprovePending"
+            : "usersApproveAdmin",
+        )}
         cancelLabel={translate("cancel")}
         loading={isApproving}
       />
@@ -755,13 +818,18 @@ export function UsersPage() {
           }
         }}
         onConfirm={() => void handleConfirmDelete()}
-        title={translate("businessStaffDeleteConfirmTitle")}
+        title={translate(
+          userToDelete?.roleName === "PENDING"
+            ? "usersDeletePendingConfirmTitle"
+            : "businessStaffDeleteConfirmTitle",
+        )}
         description={
           userToDelete
-            ? translate("businessStaffDeleteConfirmDesc").replace(
-                "{email}",
-                userToDelete.email,
-              )
+            ? translate(
+                userToDelete.roleName === "PENDING"
+                  ? "usersDeletePendingConfirmDesc"
+                  : "businessStaffDeleteConfirmDesc",
+              ).replace("{email}", userToDelete.email)
             : undefined
         }
         confirmLabel={translate("businessStaffDelete")}

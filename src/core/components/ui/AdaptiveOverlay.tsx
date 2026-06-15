@@ -234,7 +234,7 @@ export function AdaptiveOverlay({
           )}
 
           {footer && (
-            <div className="shrink-0 border-t border-slate-100 bg-white/95 px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.4)]">
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.4)]">
               {footer}
             </div>
           )}

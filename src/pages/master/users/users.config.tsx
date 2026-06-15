@@ -188,6 +188,7 @@ export function buildUsersTableColumns(
     pendingInvite: string;
     actions: string;
     approveAdmin: string;
+    approvePending: string;
     editPlan: string;
     editRole: string;
     revoke: string;
@@ -331,6 +332,11 @@ export function buildUsersTableColumns(
           options.isSuperAdmin &&
           row.status === "PENDING" &&
           row.roleName === "ADMIN";
+        const canApprovePending =
+          options.isSuperAdmin &&
+          row.status === "PENDING" &&
+          row.roleName === "PENDING" &&
+          row._id !== options.currentUserId;
         const canEditPlan =
           options.isSuperAdmin && row.roleName === "ADMIN" && Boolean(actions);
         const showEditRole =
@@ -341,6 +347,11 @@ export function buildUsersTableColumns(
         const showResend = canManage && row.status === "REVOKED";
         const showDelete =
           canManage && row.status === "REVOKED" && row.roleName === "STAFF";
+        const showDeletePending =
+          options.isSuperAdmin &&
+          row.status === "PENDING" &&
+          row.roleName === "PENDING" &&
+          row._id !== options.currentUserId;
         const isActing = actions?.actingUserId === row._id;
 
         if (
@@ -348,8 +359,10 @@ export function buildUsersTableColumns(
           !showRevoke &&
           !showResend &&
           !showDelete &&
+          !showDeletePending &&
           !canEditPlan &&
-          !canApprove
+          !canApprove &&
+          !canApprovePending
         ) {
           return null;
         }
@@ -402,6 +415,16 @@ export function buildUsersTableColumns(
                 icon={<CheckCircle2 className="h-4 w-4" />}
               />
             )}
+            {canApprovePending && actions && (
+              <IconButton
+                variant="success"
+                tooltip={labels.approvePending}
+                tooltipPlacement="left"
+                disabled={actions.actingUserId !== null}
+                onClick={() => actions.onApproveRequest(row)}
+                icon={<CheckCircle2 className="h-4 w-4" />}
+              />
+            )}
             {showResend && actions && (
               <IconButton
                 variant="default"
@@ -419,6 +442,22 @@ export function buildUsersTableColumns(
               />
             )}
             {showDelete && actions && (
+              <IconButton
+                variant="danger"
+                tooltip={labels.delete}
+                tooltipPlacement="left"
+                disabled={actions.actingUserId !== null}
+                onClick={() => actions.onRequestDelete(row)}
+                icon={
+                  isActing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )
+                }
+              />
+            )}
+            {showDeletePending && actions && (
               <IconButton
                 variant="danger"
                 tooltip={labels.delete}
