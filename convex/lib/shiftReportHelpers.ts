@@ -1,5 +1,6 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { normalizeGroupKey } from "./groupLabelHelpers";
 import {
   formatDateKey,
   getShiftCashSummary,
@@ -10,15 +11,54 @@ import { resolveSaleLineCogs } from "./inventoryCostHelpers";
 
 export const SHIFT_RETENTION_LIMIT = 10;
 
+export interface SaleDateRange {
+  startDateKey: string;
+  endDateKey: string;
+}
+
+export function rollingSaleDateRange(days: number): SaleDateRange {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+  return {
+    startDateKey: formatDateKey(start.getTime()),
+    endDateKey: formatDateKey(end.getTime()),
+  };
+}
+
+export function monthSaleDateRange(year: number, month: number): SaleDateRange {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  return {
+    startDateKey: formatDateKey(start.getTime()),
+    endDateKey: formatDateKey(end.getTime()),
+  };
+}
+
+export function yearSaleDateRange(year: number): SaleDateRange {
+  return {
+    startDateKey: `${year}-01-01`,
+    endDateKey: `${year}-12-31`,
+  };
+}
+
+function isPaidLineInRange(
+  line: Doc<"saleLines">,
+  range: SaleDateRange,
+): boolean {
+  if (line.paymentStatus !== "PAID") return false;
+  const date = formatDateKey(line.paidAt ?? line.createdAt);
+  return date >= range.startDateKey && date <= range.endDateKey;
+}
+
 export async function aggregateDailyRollupsFromSaleLines(
   ctx: QueryCtx | MutationCtx,
   businessId: Id<"businesses">,
-  days: number,
+  range: SaleDateRange,
 ) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffKey = formatDateKey(cutoff.getTime());
-
   const lines = await ctx.db
     .query("saleLines")
     .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
@@ -28,10 +68,9 @@ export async function aggregateDailyRollupsFromSaleLines(
   const unitCostCache = new Map();
 
   for (const line of lines) {
-    if (line.paymentStatus !== "PAID") continue;
-    const date = formatDateKey(line.paidAt ?? line.createdAt);
-    if (date < cutoffKey) continue;
+    if (!isPaidLineInRange(line, range)) continue;
 
+    const date = formatDateKey(line.paidAt ?? line.createdAt);
     const entry = byDate.get(date) ?? { totalRevenue: 0, totalCogs: 0 };
     entry.totalRevenue += line.lineTotal;
     entry.totalCogs += await resolveSaleLineCogs(
@@ -52,6 +91,138 @@ export async function aggregateDailyRollupsFromSaleLines(
       grossProfit: stats.totalRevenue - stats.totalCogs,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export async function aggregateTopSellingProductsFromSaleLines(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const productMap = new Map<
+    string,
+    {
+      productId: Id<"products">;
+      productName: string;
+      qty: number;
+      revenue: number;
+      cogs: number;
+    }
+  >();
+  const unitCostCache = new Map();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const product = await ctx.db.get(line.productId);
+    const key = line.productId;
+    const entry = productMap.get(key) ?? {
+      productId: line.productId,
+      productName: product?.name ?? "—",
+      qty: 0,
+      revenue: 0,
+      cogs: 0,
+    };
+    entry.qty += line.qty;
+    entry.revenue += line.lineTotal;
+    entry.cogs += await resolveSaleLineCogs(
+      ctx,
+      businessId,
+      line,
+      unitCostCache,
+    );
+    productMap.set(key, entry);
+  }
+
+  return Array.from(productMap.values())
+    .map((product) => ({
+      productId: product.productId,
+      productName: product.productName,
+      qty: product.qty,
+      unitPrice:
+        product.qty > 0 ? Math.round(product.revenue / product.qty) : 0,
+      revenue: product.revenue,
+      grossProfit: product.revenue - product.cogs,
+    }))
+    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+    .slice(0, limit);
+}
+
+export async function aggregateTopSpendingGroupsFromSaleLines(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const groupMap = new Map<
+    string,
+    {
+      groupLabel: string;
+      totalSpend: number;
+      products: Map<
+        string,
+        {
+          productId: Id<"products">;
+          productName: string;
+          qty: number;
+          revenue: number;
+        }
+      >;
+    }
+  >();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const rawLabel = line.groupLabel?.trim();
+    if (!rawLabel) continue;
+
+    const groupKey = normalizeGroupKey(rawLabel);
+    const product = await ctx.db.get(line.productId);
+
+    const group = groupMap.get(groupKey) ?? {
+      groupLabel: rawLabel,
+      totalSpend: 0,
+      products: new Map(),
+    };
+    group.totalSpend += line.lineTotal;
+
+    const productEntry = group.products.get(line.productId) ?? {
+      productId: line.productId,
+      productName: product?.name ?? "—",
+      qty: 0,
+      revenue: 0,
+    };
+    productEntry.qty += line.qty;
+    productEntry.revenue += line.lineTotal;
+    group.products.set(line.productId, productEntry);
+    groupMap.set(groupKey, group);
+  }
+
+  return Array.from(groupMap.values())
+    .map((group) => ({
+      groupLabel: group.groupLabel,
+      totalSpend: group.totalSpend,
+      products: Array.from(group.products.values())
+        .map((product) => ({
+          ...product,
+          unitPrice:
+            product.qty > 0 ? Math.round(product.revenue / product.qty) : 0,
+        }))
+        .sort((a, b) => b.revenue - a.revenue || b.qty - a.qty),
+    }))
+    .sort((a, b) => b.totalSpend - a.totalSpend)
+    .slice(0, limit);
 }
 
 export async function buildAndSaveShiftSummary(

@@ -9,20 +9,35 @@ import { useBusiness } from "../core/context/BusinessContext";
 import { useLanguage } from "../core/context/LanguageContext";
 import { formatDateOnly } from "../core/utils/formatDate";
 import { formatRupiah } from "./kasir/utils";
-import {
-  buildDailyChartSeries,
-  CHART_PERIOD_OPTIONS,
-  formatGrowthPercent,
-  type ChartPeriod,
-} from "./analytics/chartUtils";
+import { ChartRangeControls } from "./analytics/ChartRangeControls";
+import { formatGrowthPercent } from "./analytics/chartUtils";
 import { DailySalesChart, type ChartMetric } from "./analytics/DailySalesChart";
+import { PeriodInsights } from "./analytics/PeriodInsights";
+import {
+  formatAnalyticsRangeLabel,
+  getDefaultAnalyticsRange,
+  resolveAnalyticsRange,
+  resolveChartGranularity,
+  resolveChartSeries,
+  type AnalyticsRangeState,
+  type ChartPeriod,
+} from "./analytics/rangeUtils";
 
 export function AnalyticsPage() {
   const { translate, language } = useLanguage();
   const { sessionToken } = useAuth();
   const { activeBusinessId } = useBusiness();
-  const [period, setPeriod] = useState<ChartPeriod>(30);
+  const [range, setRange] = useState<AnalyticsRangeState>(getDefaultAnalyticsRange);
   const [metric, setMetric] = useState<ChartMetric>("revenue");
+
+  const dateRange = useMemo(() => resolveAnalyticsRange(range), [range]);
+  const rangeQueryArgs = useMemo(
+    () => ({
+      startDate: dateRange.startDateKey,
+      endDate: dateRange.endDateKey,
+    }),
+    [dateRange],
+  );
 
   const rollups = useQuery(
     api.reports.getDailyRollups,
@@ -30,7 +45,7 @@ export function AnalyticsPage() {
       ? {
           sessionToken,
           businessId: activeBusinessId ?? undefined,
-          days: period,
+          ...rangeQueryArgs,
         }
       : "skip",
   );
@@ -56,40 +71,64 @@ export function AnalyticsPage() {
       ? { sessionToken, businessId: activeBusinessId ?? undefined, maxQty: 5 }
       : "skip",
   );
-  const liveStats = useQuery(
-    api.shifts.getShiftLiveStats,
-    sessionToken ? { sessionToken } : "skip",
+  const topSellingProducts = useQuery(
+    api.reports.getTopSellingProducts,
+    sessionToken
+      ? {
+          sessionToken,
+          businessId: activeBusinessId ?? undefined,
+          ...rangeQueryArgs,
+        }
+      : "skip",
+  );
+  const topSpendingGroups = useQuery(
+    api.reports.getTopSpendingGroups,
+    sessionToken
+      ? {
+          sessionToken,
+          businessId: activeBusinessId ?? undefined,
+          ...rangeQueryArgs,
+        }
+      : "skip",
   );
 
   const chartSeries = useMemo(
-    () => buildDailyChartSeries(rollups ?? [], period),
-    [rollups, period],
+    () => resolveChartSeries(rollups ?? [], range, language),
+    [rollups, range, language],
   );
 
   const periodStats = useMemo(() => {
-    const totalRevenue = chartSeries.reduce((sum, d) => sum + d.totalRevenue, 0);
-    const totalProfit = chartSeries.reduce((sum, d) => sum + d.grossProfit, 0);
-    const activeDays = chartSeries.filter((d) => d.totalRevenue > 0).length;
+    const rows = rollups ?? [];
+    const totalRevenue = rows.reduce((sum, d) => sum + d.totalRevenue, 0);
+    const totalProfit = rows.reduce(
+      (sum, d) =>
+        sum + (d.grossProfit ?? d.totalRevenue - (d.totalCogs ?? 0)),
+      0,
+    );
+    const activeDays = rows.filter((d) => d.totalRevenue > 0).length;
     const margin =
       totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0;
     const avgPerDay =
       activeDays > 0 ? Math.round(totalRevenue / activeDays) : 0;
 
     return { totalRevenue, totalProfit, activeDays, margin, avgPerDay };
-  }, [chartSeries]);
+  }, [rollups]);
 
   const monthGrowth =
     monthly != null
       ? formatGrowthPercent(monthly.thisMonth, monthly.lastMonth)
       : null;
 
-  const hasSales = chartSeries.some((day) => day.totalRevenue > 0);
+  const hasSales = periodStats.totalRevenue > 0;
   const loading = rollups === undefined || monthly === undefined;
+  const rangeLabel = formatAnalyticsRangeLabel(range, language, translate);
 
-  const periodLabel = (days: ChartPeriod) => {
-    if (days === 7) return translate("analyticsPeriod7");
-    if (days === 90) return translate("analyticsPeriod90");
-    return translate("analyticsPeriod30");
+  const handleRollingChange = (period: ChartPeriod) => {
+    setRange((prev) => ({ ...prev, mode: "rolling", period }));
+  };
+
+  const handleModeChange = (mode: AnalyticsRangeState["mode"]) => {
+    setRange((prev) => ({ ...prev, mode }));
   };
 
   return (
@@ -143,23 +182,27 @@ export function AnalyticsPage() {
           <h3 className="font-semibold text-slate-900 dark:text-white">
             {translate("analyticsDailyChart")}
           </h3>
-          <div className="flex flex-wrap gap-2">
-            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
-              {CHART_PERIOD_OPTIONS.map((days) => (
-                <button
-                  key={days}
-                  type="button"
-                  onClick={() => setPeriod(days)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                    period === days
-                      ? "bg-emerald-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  {periodLabel(days)}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ChartRangeControls
+              range={range}
+              onRollingChange={handleRollingChange}
+              onMonthChange={(monthValue) =>
+                setRange((prev) => ({ ...prev, mode: "month", monthValue }))
+              }
+              onYearChange={(yearValue) =>
+                setRange((prev) => ({ ...prev, mode: "year", yearValue }))
+              }
+              onModeChange={handleModeChange}
+              labels={{
+                period7: translate("analyticsPeriod7"),
+                period30: translate("analyticsPeriod30"),
+                period90: translate("analyticsPeriod90"),
+                month: translate("analyticsRangeMonth"),
+                year: translate("analyticsRangeYear"),
+                pickMonth: translate("analyticsPickMonth"),
+                pickYear: translate("analyticsPickYear"),
+              }}
+            />
             <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
               {(
                 [
@@ -194,35 +237,35 @@ export function AnalyticsPage() {
           <DailySalesChart
             series={chartSeries}
             metric={metric}
+            granularity={resolveChartGranularity(range)}
             formatValue={formatRupiah}
+            metricLabels={{
+              revenue: translate("analyticsMetricRevenue"),
+              profit: translate("analyticsMetricProfit"),
+            }}
           />
         )}
       </section>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        {liveStats && liveStats.topProducts.length > 0 && (
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              {translate("kasirTopProducts")}
-            </h3>
-            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {liveStats.topProducts.slice(0, 5).map((product) => (
-                <li
-                  key={product.productId}
-                  className="flex items-center justify-between gap-3 py-2 text-sm first:pt-0"
-                >
-                  <span className="font-medium text-slate-900 dark:text-white">
-                    {product.productName}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-slate-600 dark:text-slate-400">
-                    {product.qty} · {formatRupiah(product.revenue)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+      <PeriodInsights
+        periodLabel={rangeLabel}
+        topProducts={topSellingProducts}
+        topGroups={topSpendingGroups}
+        labels={{
+          topProductsTitle: translate("analyticsTopProducts"),
+          topGroupsTitle: translate("analyticsTopGroups"),
+          productName: translate("productColName"),
+          price: translate("productColPrice"),
+          profit: translate("analyticsMetricProfit"),
+          qty: translate("kasirSoldQty"),
+          spend: translate("analyticsGroupSpend"),
+          groupProducts: translate("analyticsGroupProducts"),
+          emptyProducts: translate("analyticsTopProductsEmpty"),
+          emptyGroups: translate("analyticsTopGroupsEmpty"),
+        }}
+      />
 
+      <div className="mb-6 grid gap-4 lg:grid-cols-1">
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <h3 className="font-semibold text-slate-900 dark:text-white">
             {translate("analyticsLowStock")}

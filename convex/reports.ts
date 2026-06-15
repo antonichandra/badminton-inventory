@@ -6,18 +6,37 @@ import {
 } from "./lib/businessContext";
 import { getAuthenticatedUser, hasAcl } from "./lib/rbac";
 import { getActiveUnitCostForProduct } from "./lib/inventoryCostHelpers";
-import { aggregateDailyRollupsFromSaleLines } from "./lib/shiftReportHelpers";
+import {
+  aggregateDailyRollupsFromSaleLines,
+  aggregateTopSellingProductsFromSaleLines,
+  aggregateTopSpendingGroupsFromSaleLines,
+  rollingSaleDateRange,
+  type SaleDateRange,
+} from "./lib/shiftReportHelpers";
 import {
   findShiftAtTimestamp,
   resolvePriceKind,
 } from "./lib/productPriceHistoryHelpers";
 import { formatDateKey } from "./lib/shiftHelpers";
 
+function resolveSaleDateRange(args: {
+  days?: number;
+  startDate?: string;
+  endDate?: string;
+}): SaleDateRange {
+  if (args.startDate && args.endDate) {
+    return { startDateKey: args.startDate, endDateKey: args.endDate };
+  }
+  return rollingSaleDateRange(args.days ?? 30);
+}
+
 export const getDailyRollups = query({
   args: {
     sessionToken: v.string(),
     businessId: v.optional(v.id("businesses")),
     days: v.optional(v.number()),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
@@ -33,8 +52,74 @@ export const getDailyRollups = query({
 
     await assertBusinessAccess(ctx, user, role, businessId);
 
-    const dayLimit = args.days ?? 30;
-    return aggregateDailyRollupsFromSaleLines(ctx, businessId, dayLimit);
+    const range = resolveSaleDateRange(args);
+    return aggregateDailyRollupsFromSaleLines(ctx, businessId, range);
+  },
+});
+
+export const getTopSellingProducts = query({
+  args: {
+    sessionToken: v.string(),
+    businessId: v.optional(v.id("businesses")),
+    days: v.optional(v.number()),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!hasAcl(role, "analytics")) return [];
+
+    const businessId = await resolveScopedBusinessId(
+      ctx,
+      user,
+      role,
+      args.businessId,
+    );
+    if (!businessId) return [];
+
+    await assertBusinessAccess(ctx, user, role, businessId);
+
+    const range = resolveSaleDateRange(args);
+    return aggregateTopSellingProductsFromSaleLines(
+      ctx,
+      businessId,
+      range,
+      args.limit ?? 10,
+    );
+  },
+});
+
+export const getTopSpendingGroups = query({
+  args: {
+    sessionToken: v.string(),
+    businessId: v.optional(v.id("businesses")),
+    days: v.optional(v.number()),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!hasAcl(role, "analytics")) return [];
+
+    const businessId = await resolveScopedBusinessId(
+      ctx,
+      user,
+      role,
+      args.businessId,
+    );
+    if (!businessId) return [];
+
+    await assertBusinessAccess(ctx, user, role, businessId);
+
+    const range = resolveSaleDateRange(args);
+    return aggregateTopSpendingGroupsFromSaleLines(
+      ctx,
+      businessId,
+      range,
+      args.limit ?? 10,
+    );
   },
 });
 
