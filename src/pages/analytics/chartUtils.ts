@@ -70,6 +70,41 @@ export function formatAxisLabel(dateKey: string): string {
   return `${Number(day)}/${Number(month)}`;
 }
 
+export function formatDayTooltipLabel(
+  dateKey: string,
+  language: "ID" | "EN",
+): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const locale = language === "ID" ? "id-ID" : "en-US";
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
+export function formatMonthAxisLabel(
+  month: number,
+  language: "ID" | "EN",
+): string {
+  const locale = language === "ID" ? "id-ID" : "en-US";
+  return new Intl.DateTimeFormat(locale, { month: "short" }).format(
+    new Date(2020, month - 1, 1),
+  );
+}
+
+export function formatMonthTooltipLabel(
+  year: number,
+  month: number,
+  language: "ID" | "EN",
+): string {
+  const locale = language === "ID" ? "id-ID" : "en-US";
+  return new Intl.DateTimeFormat(locale, {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(year, month - 1, 1));
+}
+
 export function formatCompactRupiah(amount: number): string {
   if (amount >= 1_000_000) {
     const jt = amount / 1_000_000;
