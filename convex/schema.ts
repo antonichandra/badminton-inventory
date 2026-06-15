@@ -87,6 +87,8 @@ const priceTierEntry = v.object({
   revenue: v.number(),
   productType: v.optional(productType),
   rentalHoursTotal: v.optional(v.number()),
+  cogs: v.optional(v.number()),
+  grossProfit: v.optional(v.number()),
 });
 
 const topProductEntry = v.object({
@@ -94,6 +96,8 @@ const topProductEntry = v.object({
   productName: v.string(),
   qty: v.number(),
   revenue: v.number(),
+  cogs: v.optional(v.number()),
+  grossProfit: v.optional(v.number()),
 });
 
 const stockReconEntry = v.object({

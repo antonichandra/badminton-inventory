@@ -1,6 +1,15 @@
 import { useMemo, useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { useLanguage } from "../../core/context/LanguageContext";
+import {
+  KasirTableShell,
+  KasirTd,
+  KasirTh,
+  kasirTableClass,
+  kasirTbodyClass,
+  kasirTheadClass,
+  kasirTrClass,
+} from "./KasirTable";
 import { formatRupiah } from "./utils";
 
 export type PriceTierRow = {
@@ -9,6 +18,8 @@ export type PriceTierRow = {
   unitPrice: number;
   qty: number;
   revenue: number;
+  cogs?: number;
+  grossProfit?: number;
   productType?: "RETAIL" | "RENTAL";
   rentalHoursTotal?: number;
 };
@@ -17,12 +28,12 @@ type SalesTab = "retail" | "rental";
 
 interface SalesByTierTabsProps {
   tiers: PriceTierRow[];
-  variant?: "default" | "compact";
+  showGrossProfit?: boolean;
 }
 
 export function SalesByTierTabs({
   tiers,
-  variant = "default",
+  showGrossProfit = false,
 }: SalesByTierTabsProps) {
   const { translate } = useLanguage();
   const [tab, setTab] = useState<SalesTab>("retail");
@@ -39,11 +50,6 @@ export function SalesByTierTabs({
   if (tiers.length === 0) return null;
 
   const activeTiers = tab === "retail" ? retailTiers : rentalTiers;
-  const isCompact = variant === "compact";
-  const cellClass = isCompact ? "py-1 pr-2" : "px-3 py-2";
-  const headClass = isCompact
-    ? "py-1 pr-2 text-left text-slate-500"
-    : "px-3 py-2 bg-slate-50 text-left dark:bg-slate-800";
 
   const tabs: { id: SalesTab; label: string; count: number }[] = [
     {
@@ -59,7 +65,7 @@ export function SalesByTierTabs({
   ];
 
   return (
-    <div className={isCompact ? "mt-4" : undefined}>
+    <div>
       <div className="mb-2 flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-700">
         {tabs.map((t) => (
           <button
@@ -85,46 +91,56 @@ export function SalesByTierTabs({
           {translate("kasirNoData")}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-          <table className="min-w-full text-sm">
-            <thead className={isCompact ? undefined : "bg-slate-50 dark:bg-slate-800"}>
+        <KasirTableShell>
+          <table className={kasirTableClass}>
+            <thead className={kasirTheadClass}>
               <tr>
-                <th className={headClass}>Produk</th>
-                <th className={headClass}>{translate("kasirPriceTier")}</th>
-                <th className={headClass}>
+                <KasirTh>Produk</KasirTh>
+                <KasirTh>{translate("kasirPriceTier")}</KasirTh>
+                <KasirTh>
                   {tab === "rental"
                     ? translate("kasirSoldUnitHours")
                     : translate("kasirSoldQty")}
-                </th>
-                <th className={isCompact ? "py-1" : "px-3 py-2"}>
-                  {translate("kasirRevenue")}
-                </th>
+                </KasirTh>
+                <KasirTh>{translate("kasirRevenue")}</KasirTh>
+                {showGrossProfit && (
+                  <KasirTh>{translate("kasirGrossProfit")}</KasirTh>
+                )}
               </tr>
             </thead>
-            <tbody>
+            <tbody className={kasirTbodyClass}>
               {activeTiers.map((tier) => (
                 <tr
                   key={`${tier.productId}-${tier.unitPrice}`}
-                  className="border-t border-slate-100 dark:border-slate-800"
+                  className={kasirTrClass}
                 >
-                  <td className={cellClass}>{tier.productName}</td>
-                  <td className={cellClass}>
+                  <KasirTd className="font-medium text-slate-900 dark:text-white">
+                    {tier.productName}
+                  </KasirTd>
+                  <KasirTd>
                     {formatRupiah(tier.unitPrice)}
                     {tab === "rental" ? translate("kasirPerHour") : ""}
-                  </td>
-                  <td className={cellClass}>
+                  </KasirTd>
+                  <KasirTd>
                     {tab === "rental"
                       ? (tier.rentalHoursTotal ?? 0)
                       : tier.qty}
-                  </td>
-                  <td className={isCompact ? "py-1" : "px-3 py-2"}>
+                  </KasirTd>
+                  <KasirTd className="font-medium">
                     {formatRupiah(tier.revenue)}
-                  </td>
+                  </KasirTd>
+                  {showGrossProfit && (
+                    <KasirTd className="font-medium text-emerald-700 dark:text-emerald-400">
+                      {formatRupiah(
+                        tier.grossProfit ?? tier.revenue - (tier.cogs ?? 0),
+                      )}
+                    </KasirTd>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </KasirTableShell>
       )}
     </div>
   );

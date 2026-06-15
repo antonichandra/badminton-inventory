@@ -39,7 +39,6 @@ import {
   generatePaymentBatchId,
   getOpenShiftForBusiness,
   getShiftCashSummary,
-  getShiftSalesByPriceTier,
   getShiftSalesStats,
   getShiftStockReconciliation,
   getShiftStockSummary,
@@ -321,7 +320,30 @@ export const getShiftLiveStats = query({
   handler: async (ctx, args) => {
     const context = await tryOpenShiftContext(ctx, args.sessionToken);
     if (!context) return null;
-    return getShiftSalesStats(ctx, context.shift._id);
+    const salesStats = await getShiftSalesStats(ctx, context.shift._id);
+    const showProfitDetail =
+      isAdmin(context.role) || isSuperAdmin(context.role);
+
+    const topProducts = showProfitDetail
+      ? salesStats.topProducts
+      : salesStats.topProducts.map(({ cogs, grossProfit, ...rest }) => rest);
+
+    const salesByPriceTier = showProfitDetail
+      ? salesStats.salesByPriceTier
+      : salesStats.salesByPriceTier.map(({ cogs, grossProfit, ...rest }) => rest);
+
+    return {
+      paidRevenue: salesStats.paidRevenue,
+      unpaidRevenue: salesStats.unpaidRevenue,
+      topProducts,
+      salesByPriceTier,
+      ...(showProfitDetail
+        ? {
+            grossProfit: salesStats.estimatedGrossProfit,
+            totalCogs: salesStats.estimatedTotalCogs,
+          }
+        : {}),
+    };
   },
 });
 
@@ -420,7 +442,15 @@ export const getShiftDetail = query({
       grossProfit = salesStats.grossProfit;
     }
 
-    const salesByPriceTier = await getShiftSalesByPriceTier(ctx, shift._id);
+    const salesStats = await getShiftSalesStats(ctx, shift._id);
+    const showProfitDetail = isAdmin(role) || isSuperAdmin(role);
+    const salesByPriceTier = showProfitDetail
+      ? salesStats.salesByPriceTier
+      : salesStats.salesByPriceTier.map(({ cogs, grossProfit, ...rest }) => rest);
+
+    const displayGrossProfit = saved
+      ? grossProfit
+      : salesStats.estimatedGrossProfit;
 
     return {
       shift,
@@ -431,8 +461,12 @@ export const getShiftDetail = query({
       stockReconciliation,
       salesByPriceTier,
       totalRevenue,
-      totalCogs,
-      grossProfit,
+      ...(showProfitDetail
+        ? {
+            totalCogs: saved ? totalCogs : salesStats.estimatedTotalCogs,
+            grossProfit: displayGrossProfit,
+          }
+        : {}),
       assignedStaffName: assignedStaff?.name ?? null,
       closedByName: closedByUser?.name ?? null,
     };

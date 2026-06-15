@@ -1,6 +1,7 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getRoleById } from "./authHelpers";
+import { getFallbackUnitCost } from "./inventoryCostHelpers";
 
 export function calculateLineTotal(
   product: Doc<"products">,
@@ -135,6 +136,7 @@ export async function getShiftStockReconciliation(
 export async function getShiftSalesByPriceTier(
   ctx: QueryCtx | MutationCtx,
   shiftId: Id<"shifts">,
+  businessId: Id<"businesses">,
 ) {
   const lines = await ctx.db
     .query("saleLines")
@@ -149,6 +151,7 @@ export async function getShiftSalesByPriceTier(
       unitPrice: number;
       qty: number;
       revenue: number;
+      cogs: number;
       productType: "RETAIL" | "RENTAL";
       rentalHoursTotal: number;
     }
@@ -160,10 +163,20 @@ export async function getShiftSalesByPriceTier(
     const key = `${line.productId}:${line.unitPrice}`;
     const productType = product?.type ?? "RETAIL";
     const rentalHours = line.rentalHours ?? 0;
+    let lineCogs = 0;
+    if (productType === "RETAIL") {
+      const unitCost = await getFallbackUnitCost(
+        ctx,
+        businessId,
+        line.productId,
+      );
+      lineCogs = line.qty * unitCost;
+    }
     const existing = tierMap.get(key);
     if (existing) {
       existing.qty += line.qty;
       existing.revenue += line.lineTotal;
+      existing.cogs += lineCogs;
       if (productType === "RENTAL") {
         existing.rentalHoursTotal += line.qty * rentalHours;
       }
@@ -174,15 +187,19 @@ export async function getShiftSalesByPriceTier(
         unitPrice: line.unitPrice,
         qty: line.qty,
         revenue: line.lineTotal,
+        cogs: lineCogs,
         productType,
         rentalHoursTotal: productType === "RENTAL" ? line.qty * rentalHours : 0,
       });
     }
   }
 
-  return Array.from(tierMap.values()).sort((a, b) =>
-    a.productName.localeCompare(b.productName),
-  );
+  return Array.from(tierMap.values())
+    .map((tier) => ({
+      ...tier,
+      grossProfit: tier.revenue - tier.cogs,
+    }))
+    .sort((a, b) => a.productName.localeCompare(b.productName));
 }
 
 export async function getShiftSalesStats(
@@ -190,6 +207,11 @@ export async function getShiftSalesStats(
   shiftId: Id<"shifts">,
   shiftCogs?: number,
 ) {
+  const shift = await ctx.db.get(shiftId);
+  if (!shift) {
+    throw new Error("SHIFT_NOT_FOUND");
+  }
+
   const lines = await ctx.db
     .query("saleLines")
     .withIndex("by_shiftId", (q) => q.eq("shiftId", shiftId))
@@ -199,24 +221,42 @@ export async function getShiftSalesStats(
   let unpaidRevenue = 0;
   const productMap = new Map<
     string,
-    { productId: Id<"products">; productName: string; qty: number; revenue: number }
+    {
+      productId: Id<"products">;
+      productName: string;
+      qty: number;
+      revenue: number;
+      cogs: number;
+    }
   >();
 
   for (const line of lines) {
     const product = await ctx.db.get(line.productId);
+    const productType = product?.type ?? "RETAIL";
     if (line.paymentStatus === "PAID") {
       paidRevenue += line.lineTotal;
+      let lineCogs = 0;
+      if (productType === "RETAIL") {
+        const unitCost = await getFallbackUnitCost(
+          ctx,
+          shift.businessId,
+          line.productId,
+        );
+        lineCogs = line.qty * unitCost;
+      }
       const key = line.productId;
       const existing = productMap.get(key);
       if (existing) {
         existing.qty += line.qty;
         existing.revenue += line.lineTotal;
+        existing.cogs += lineCogs;
       } else {
         productMap.set(key, {
           productId: line.productId,
           productName: product?.name ?? "—",
           qty: line.qty,
           revenue: line.lineTotal,
+          cogs: lineCogs,
         });
       }
     } else {
@@ -233,7 +273,17 @@ export async function getShiftSalesStats(
     totalCogs = lots.reduce((sum, lot) => sum + lot.qty * lot.unitCost, 0);
   }
 
+  const estimatedTotalCogs = Array.from(productMap.values()).reduce(
+    (sum, product) => sum + product.cogs,
+    0,
+  );
+  const estimatedGrossProfit = paidRevenue - estimatedTotalCogs;
+
   const topProducts = Array.from(productMap.values())
+    .map((product) => ({
+      ...product,
+      grossProfit: product.revenue - product.cogs,
+    }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
@@ -241,9 +291,15 @@ export async function getShiftSalesStats(
     paidRevenue,
     unpaidRevenue,
     totalCogs,
+    estimatedTotalCogs,
+    estimatedGrossProfit,
     grossProfit: paidRevenue - totalCogs,
     topProducts,
-    salesByPriceTier: await getShiftSalesByPriceTier(ctx, shiftId),
+    salesByPriceTier: await getShiftSalesByPriceTier(
+      ctx,
+      shiftId,
+      shift.businessId,
+    ),
   };
 }
 
@@ -252,8 +308,12 @@ export async function getShiftStockSummary(
   ctx: QueryCtx | MutationCtx,
   shiftId: Id<"shifts">,
 ) {
+  const shift = await ctx.db.get(shiftId);
+  if (!shift) {
+    throw new Error("SHIFT_NOT_FOUND");
+  }
   const recon = await getShiftStockReconciliation(ctx, shiftId);
-  const tiers = await getShiftSalesByPriceTier(ctx, shiftId);
+  const tiers = await getShiftSalesByPriceTier(ctx, shiftId, shift.businessId);
 
   const revenueByProduct = new Map<string, number>();
   for (const tier of tiers) {

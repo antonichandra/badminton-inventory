@@ -4,31 +4,31 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { InputText } from "../../core/components/forms/InputText";
 import { Button } from "../../core/components/ui/Button";
+import { LoadingState } from "../../core/components/ui/LoadingState";
+import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { formatDateOnly, formatDateTime } from "../../core/utils/formatDate";
 import { ExportShiftButton } from "./ExportShiftButton";
 import { ExportShiftPdfButton } from "./ExportShiftPdfButton";
-import { SalesByTierTabs } from "./SalesByTierTabs";
+import { SalesByTierTabs, type PriceTierRow } from "./SalesByTierTabs";
 import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
+import {
+  KasirTableShell,
+  KasirTd,
+  KasirTh,
+  kasirTableClass,
+  kasirTbodyClass,
+  kasirTheadClass,
+  kasirTrClass,
+} from "./KasirTable";
 import { formatRupiah, getShiftDurationDays } from "./utils";
 
 type SummaryTab = "stock" | "receipts" | "expenses" | "deposits";
-
-type PriceTierRow = {
-  productId: Id<"products">;
-  productName: string;
-  unitPrice: number;
-  qty: number;
-  revenue: number;
-  productType?: "RETAIL" | "RENTAL";
-  rentalHoursTotal?: number;
-};
 
 interface ShiftSummaryViewProps {
   sessionToken: string;
   shiftId: Id<"shifts">;
   onOpenNewShift?: () => void;
-  onBack?: () => void;
   showOpenNewShift?: boolean;
 }
 
@@ -36,10 +36,11 @@ export function ShiftSummaryView({
   sessionToken,
   shiftId,
   onOpenNewShift,
-  onBack,
   showOpenNewShift = true,
 }: ShiftSummaryViewProps) {
   const { translate, language } = useLanguage();
+  const { role } = useAuth();
+  const showGrossProfit = role?.name === "ADMIN";
   const [tab, setTab] = useState<SummaryTab>("stock");
   const [productFilter, setProductFilter] = useState("");
 
@@ -83,8 +84,8 @@ export function ShiftSummaryView({
 
   if (!data) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
-        <p className="text-slate-500">{translate("loading")}</p>
+      <div className="rounded-xl border border-slate-200 bg-white p-8 dark:border-slate-700 dark:bg-slate-900">
+        <LoadingState variant="page" />
       </div>
     );
   }
@@ -122,6 +123,12 @@ export function ShiftSummaryView({
   const totalSales =
     summary?.totalSales ?? cashSummary.totalSales ?? data.totalRevenue;
   const verifiedQris = summary?.verifiedQris ?? cashSummary.verifiedQris;
+  const recordedQrisSales =
+    summary?.recordedQrisSales ??
+    summary?.qrisSales ??
+    cashSummary.recordedQrisSales ??
+    cashSummary.qrisSales ??
+    0;
   const reportedCash = summary?.reportedCash ?? cashSummary.reportedCash;
   const expectedCashInDrawer =
     summary?.expectedCashInDrawer ?? cashSummary.expectedCashInDrawer;
@@ -136,12 +143,6 @@ export function ShiftSummaryView({
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      {onBack && (
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          {translate("kasirBack")}
-        </Button>
-      )}
-
       <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -188,14 +189,15 @@ export function ShiftSummaryView({
             openingCash={openingCash}
             totalSales={totalSales}
             verifiedQris={verifiedQris}
+            recordedQrisSales={recordedQrisSales}
             expenses={expenseTotal}
             deposits={depositTotal}
             expectedCashInDrawer={expectedCashInDrawer}
             reportedCash={reportedCash}
             cashVariance={cashVariance}
             totalRevenue={data.totalRevenue}
-            totalCogs={data.totalCogs}
-            grossProfit={data.grossProfit}
+            totalCogs={showGrossProfit ? data.totalCogs : undefined}
+            grossProfit={showGrossProfit ? data.grossProfit : undefined}
             overInputQtyTotal={summary?.overInputQtyTotal}
             missInputQtyTotal={summary?.missInputQtyTotal}
           />
@@ -245,6 +247,7 @@ export function ShiftSummaryView({
             <StockReconTable
               rows={filteredStockRecon}
               salesByPriceTier={filteredSalesTiers}
+              showGrossProfit={showGrossProfit}
             />
           )}
           {tab === "receipts" && <ReceiptsTable rows={stockReceipts} />}
@@ -265,6 +268,7 @@ export function ShiftSummaryView({
 function StockReconTable({
   rows,
   salesByPriceTier,
+  showGrossProfit,
 }: {
   rows: Array<{
     productId: Id<"products">;
@@ -279,6 +283,7 @@ function StockReconTable({
     missInputQty: number;
   }>;
   salesByPriceTier: PriceTierRow[];
+  showGrossProfit: boolean;
 }) {
   const { translate } = useLanguage();
 
@@ -294,43 +299,44 @@ function StockReconTable({
     <div className="space-y-4">
       {rows.length > 0 && (
         <>
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left dark:bg-slate-800">
-              <tr>
-                <th className="px-3 py-2">Produk</th>
-                <th className="px-3 py-2">{translate("kasirOpeningStock")}</th>
-                <th className="px-3 py-2">{translate("kasirReceived")}</th>
-                <th className="px-3 py-2">{translate("kasirWriteOff")}</th>
-                <th className="px-3 py-2">{translate("kasirClosingStock")}</th>
-                <th className="px-3 py-2">{translate("kasirSoldPhysical")}</th>
-                <th className="px-3 py-2">{translate("kasirSoldRecorded")}</th>
-                <th className="px-3 py-2">{translate("kasirOverInput")}</th>
-                <th className="px-3 py-2">{translate("kasirMissInput")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.productId}
-                  className="border-t border-slate-100 dark:border-slate-800"
-                >
-                  <td className="px-3 py-2">{row.productName}</td>
-                  <td className="px-3 py-2">{row.openingQty}</td>
-                  <td className="px-3 py-2">{row.receivedQty}</td>
-                  <td className="px-3 py-2">{row.writeOffQty}</td>
-                  <td className="px-3 py-2">{row.closingQty}</td>
-                  <td className="px-3 py-2 font-medium">{row.soldQtyFromStock}</td>
-                  <td className="px-3 py-2">{row.soldQtyFromLines}</td>
-                  <td className="px-3 py-2 text-amber-600">
-                    {row.overInputQty || "—"}
-                  </td>
-                  <td className="px-3 py-2 text-blue-600">
-                    {row.missInputQty || "—"}
-                  </td>
+          <KasirTableShell>
+            <table className={kasirTableClass}>
+              <thead className={kasirTheadClass}>
+                <tr>
+                  <KasirTh>Produk</KasirTh>
+                  <KasirTh>{translate("kasirOpeningStock")}</KasirTh>
+                  <KasirTh>{translate("kasirReceived")}</KasirTh>
+                  <KasirTh>{translate("kasirWriteOff")}</KasirTh>
+                  <KasirTh>{translate("kasirClosingStock")}</KasirTh>
+                  <KasirTh>{translate("kasirSoldPhysical")}</KasirTh>
+                  <KasirTh>{translate("kasirSoldRecorded")}</KasirTh>
+                  <KasirTh>{translate("kasirOverInput")}</KasirTh>
+                  <KasirTh>{translate("kasirMissInput")}</KasirTh>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className={kasirTbodyClass}>
+                {rows.map((row) => (
+                  <tr key={row.productId} className={kasirTrClass}>
+                    <KasirTd className="font-medium text-slate-900 dark:text-white">
+                      {row.productName}
+                    </KasirTd>
+                    <KasirTd>{row.openingQty}</KasirTd>
+                    <KasirTd>{row.receivedQty}</KasirTd>
+                    <KasirTd>{row.writeOffQty}</KasirTd>
+                    <KasirTd>{row.closingQty}</KasirTd>
+                    <KasirTd className="font-medium">{row.soldQtyFromStock}</KasirTd>
+                    <KasirTd>{row.soldQtyFromLines}</KasirTd>
+                    <KasirTd className="text-amber-600 dark:text-amber-400">
+                      {row.overInputQty || "—"}
+                    </KasirTd>
+                    <KasirTd className="text-blue-600 dark:text-blue-400">
+                      {row.missInputQty || "—"}
+                    </KasirTd>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </KasirTableShell>
           <p className="text-xs text-slate-500">{translate("kasirRentalNote")}</p>
         </>
       )}
@@ -340,7 +346,10 @@ function StockReconTable({
           <p className="mb-2 text-xs font-medium uppercase text-slate-500">
             {translate("kasirSalesByPrice")}
           </p>
-          <SalesByTierTabs tiers={salesByPriceTier} />
+          <SalesByTierTabs
+            tiers={salesByPriceTier}
+            showGrossProfit={showGrossProfit}
+          />
         </div>
       )}
     </div>
@@ -375,46 +384,48 @@ function ReceiptsTable({
   }
 
   return (
-    <table className="min-w-full text-sm">
-      <thead className="bg-slate-50 text-left dark:bg-slate-800">
-        <tr>
-          <th className="px-3 py-2">{translate("kasirDate")}</th>
-          <th className="px-3 py-2">{translate("kasirSupplier")}</th>
-          <th className="px-3 py-2">Produk</th>
-          <th className="px-3 py-2">{translate("kasirQty")}</th>
-          <th className="px-3 py-2">{translate("kasirUnitCost")}</th>
-          <th className="px-3 py-2">{translate("kasirLineTotal")}</th>
-          <th className="px-3 py-2">{translate("kasirExpiryDate")}</th>
-          <th className="px-3 py-2">{translate("kasirNote")}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, index) => (
-          <tr
-            key={`${row.receiptId}-${index}`}
-            className="border-t border-slate-100 dark:border-slate-800"
-          >
-            <td className="px-3 py-2 whitespace-nowrap">
-              {formatDateTime(row.createdAt, language)}
-            </td>
-            <td className="px-3 py-2">{row.supplierName}</td>
-            <td className="px-3 py-2">
-              {row.productName}
-              {row.productUnit ? ` (${row.productUnit})` : ""}
-            </td>
-            <td className="px-3 py-2">{row.qty}</td>
-            <td className="px-3 py-2">{formatRupiah(row.unitCost)}</td>
-            <td className="px-3 py-2">{formatRupiah(row.lineTotal)}</td>
-            <td className="px-3 py-2">
-              {row.expiresAt
-                ? formatDateOnly(row.expiresAt, language)
-                : "—"}
-            </td>
-            <td className="px-3 py-2 max-w-[120px] truncate">{row.note ?? "—"}</td>
+    <KasirTableShell>
+      <table className={kasirTableClass}>
+        <thead className={kasirTheadClass}>
+          <tr>
+            <KasirTh>{translate("kasirDate")}</KasirTh>
+            <KasirTh>{translate("kasirSupplier")}</KasirTh>
+            <KasirTh>Produk</KasirTh>
+            <KasirTh>{translate("kasirQty")}</KasirTh>
+            <KasirTh>{translate("kasirUnitCost")}</KasirTh>
+            <KasirTh>{translate("kasirLineTotal")}</KasirTh>
+            <KasirTh>{translate("kasirExpiryDate")}</KasirTh>
+            <KasirTh>{translate("kasirNote")}</KasirTh>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className={kasirTbodyClass}>
+          {rows.map((row, index) => (
+            <tr
+              key={`${row.receiptId}-${index}`}
+              className={kasirTrClass}
+            >
+              <KasirTd className="whitespace-nowrap">
+                {formatDateTime(row.createdAt, language)}
+              </KasirTd>
+              <KasirTd>{row.supplierName}</KasirTd>
+              <KasirTd>
+                {row.productName}
+                {row.productUnit ? ` (${row.productUnit})` : ""}
+              </KasirTd>
+              <KasirTd>{row.qty}</KasirTd>
+              <KasirTd>{formatRupiah(row.unitCost)}</KasirTd>
+              <KasirTd>{formatRupiah(row.lineTotal)}</KasirTd>
+              <KasirTd>
+                {row.expiresAt
+                  ? formatDateOnly(row.expiresAt, language)
+                  : "—"}
+              </KasirTd>
+              <KasirTd className="max-w-[120px] truncate">{row.note ?? "—"}</KasirTd>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </KasirTableShell>
   );
 }
 
@@ -440,30 +451,29 @@ function CashEntriesTable({
   }
 
   return (
-    <table className="min-w-full text-sm">
-      <thead className="bg-slate-50 text-left dark:bg-slate-800">
-        <tr>
-          <th className="px-3 py-2">{translate("kasirDate")}</th>
-          <th className="px-3 py-2">{translate("kasirPayTotal")}</th>
-          <th className="px-3 py-2">{translate("kasirNote")}</th>
-          <th className="px-3 py-2">{translate("kasirRecordedBy")}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr
-            key={row._id}
-            className="border-t border-slate-100 dark:border-slate-800"
-          >
-            <td className="px-3 py-2 whitespace-nowrap">
-              {formatDateTime(row.createdAt, language)}
-            </td>
-            <td className="px-3 py-2 font-medium">{formatRupiah(row.amount)}</td>
-            <td className="px-3 py-2">{row.note}</td>
-            <td className="px-3 py-2">{row.recordedByName}</td>
+    <KasirTableShell>
+      <table className={kasirTableClass}>
+        <thead className={kasirTheadClass}>
+          <tr>
+            <KasirTh>{translate("kasirDate")}</KasirTh>
+            <KasirTh>{translate("kasirPayTotal")}</KasirTh>
+            <KasirTh>{translate("kasirNote")}</KasirTh>
+            <KasirTh>{translate("kasirRecordedBy")}</KasirTh>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className={kasirTbodyClass}>
+          {rows.map((row) => (
+            <tr key={row._id} className={kasirTrClass}>
+              <KasirTd className="whitespace-nowrap">
+                {formatDateTime(row.createdAt, language)}
+              </KasirTd>
+              <KasirTd className="font-medium">{formatRupiah(row.amount)}</KasirTd>
+              <KasirTd>{row.note}</KasirTd>
+              <KasirTd>{row.recordedByName}</KasirTd>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </KasirTableShell>
   );
 }

@@ -7,6 +7,7 @@ import { PageHeader } from "../../core/components/PageHeader";
 import { PermissionGuard } from "../../core/components/PermissionGuard";
 import { Button } from "../../core/components/ui/Button";
 import { ConfirmModal } from "../../core/components/ui/ConfirmModal";
+import { Skeleton } from "../../core/components/ui/Skeleton";
 import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
@@ -378,7 +379,12 @@ export function BusinessFormPage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         {isLoading ? (
-          <p className="text-sm text-slate-500">{translate("loading")}</p>
+          <div className="space-y-4" aria-busy="true">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="h-24 w-full" />
+          </div>
         ) : (
           <>
             <BusinessFormFields
@@ -423,7 +429,6 @@ export function BusinessFormPage() {
               resend: translate("businessStaffResend"),
               delete: translate("businessStaffDelete"),
               editRole: translate("businessStaffEditRole"),
-              loading: translate("loading"),
               empty: translate("placeholderEmpty"),
               staffQuota: translate("businessStaffQuota"),
               limitReached: translate("businessStaffLimitReached"),

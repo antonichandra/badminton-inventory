@@ -41,7 +41,7 @@ export function PaySuccessSheet({
   const handleExport = async () => {
     if (!receipt?.batch || !receipt.business) return;
 
-    const blob = generateReceiptPdf({
+    const blob = await generateReceiptPdf({
       businessName: receipt.business.name,
       businessAddress: receipt.business.address,
       sportSlug: receipt.sport?.slug,

@@ -13,13 +13,14 @@ export const DEFAULT_ROLES = [
       "master_plan",
       "business",
       "kasir",
+      "analytics",
     ],
     isSystem: true,
   },
   {
     name: "ADMIN",
     description: "Business owner — manage own court inventory",
-    acl: ["business", "master_produk", "master_akun", "kasir"],
+    acl: ["business", "master_produk", "master_akun", "kasir", "analytics"],
     isSystem: true,
   },
   {

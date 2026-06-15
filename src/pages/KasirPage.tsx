@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
-import { Plus, CreditCard, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, Plus, CreditCard, MoreHorizontal } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { PageHeader } from "../core/components/PageHeader";
 import { UserInfoRow } from "../core/components/UserInfoRow";
 import { PermissionGuard } from "../core/components/PermissionGuard";
 import { Button } from "../core/components/ui/Button";
+import { IconButton } from "../core/components/ui/IconButton";
+import { LoadingState } from "../core/components/ui/LoadingState";
 import { ViewPanelTransition } from "../core/components/ui/ViewPanelTransition";
 import { useAuth } from "../core/context/AuthContext";
 import { useBusiness } from "../core/context/BusinessContext";
@@ -186,7 +188,7 @@ export function KasirPage() {
         content: (
           <>
             <PageHeader title={translate("menuKasir")} />
-            <p className="text-slate-500">{translate("loading")}</p>
+            <LoadingState variant="page" />
           </>
         ),
       };
@@ -211,17 +213,28 @@ export function KasirPage() {
         panelKey: `summary-${closedShiftId}`,
         content: (
           <>
-            <PageHeader title={translate("kasirSummary")} />
+            <div className="mb-5 flex items-start gap-2 sm:mb-8 sm:gap-3">
+              <IconButton
+                icon={<ArrowLeft className="h-5 w-5" />}
+                tooltip={translate("kasirBack")}
+                variant="ghost"
+                className="mt-0.5 shrink-0"
+                aria-label={translate("kasirBack")}
+                onClick={() => {
+                  setClosedShiftId(null);
+                  setView(
+                    summaryReturnView === "report" || !openShift ? "report" : "hub",
+                  );
+                }}
+              />
+              <div className="min-w-0 flex-1">
+                <PageHeader embedded title={translate("kasirSummary")} />
+              </div>
+            </div>
             <ShiftSummaryView
               sessionToken={sessionToken}
               shiftId={closedShiftId}
               showOpenNewShift={summaryReturnView !== "report"}
-              onBack={() => {
-                setClosedShiftId(null);
-                setView(
-                  summaryReturnView === "report" || !openShift ? "report" : "hub",
-                );
-              }}
               onOpenNewShift={() => {
                 setClosedShiftId(null);
                 setView("open");
@@ -237,14 +250,26 @@ export function KasirPage() {
         panelKey: "report",
         content: (
           <>
-            <PageHeader
-              title={translate("kasirReportTitle")}
-              subtitle={translate("kasirReportSubtitle")}
-            />
+            <div className="mb-5 flex items-start gap-2 sm:mb-8 sm:gap-3">
+              <IconButton
+                icon={<ArrowLeft className="h-5 w-5" />}
+                tooltip={translate("kasirBack")}
+                variant="ghost"
+                className="mt-0.5 shrink-0"
+                aria-label={translate("kasirBack")}
+                onClick={() => setView("hub")}
+              />
+              <div className="min-w-0 flex-1">
+                <PageHeader
+                  embedded
+                  title={translate("kasirReportTitle")}
+                  subtitle={translate("kasirReportSubtitle")}
+                />
+              </div>
+            </div>
             <ShiftReportPanel
               sessionToken={sessionToken}
               businessId={activeBusiness}
-              onBack={() => setView("hub")}
               onViewShift={(shiftId) => {
                 setClosedShiftId(shiftId);
                 setSummaryReturnView("report");

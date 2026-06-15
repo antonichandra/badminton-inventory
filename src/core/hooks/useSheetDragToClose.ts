@@ -49,6 +49,7 @@ export function useSheetDragToClose({
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [dismissedByDrag, setDismissedByDrag] = useState(false);
 
   const startYRef = useRef(0);
   const lastYRef = useRef(0);
@@ -68,6 +69,7 @@ export function useSheetDragToClose({
       setDragOffset(0);
       setIsDragging(false);
       setIsAnimating(false);
+      setDismissedByDrag(false);
       clearAnimationTimer();
     }
   }, [open, clearAnimationTimer]);
@@ -151,6 +153,7 @@ export function useSheetDragToClose({
       velocityRef.current > VELOCITY_THRESHOLD;
 
     if (shouldDismiss) {
+      setDismissedByDrag(true);
       animateToOffset(getPanelHeight(), DISMISS_ANIMATION_MS, onClose);
       return;
     }
@@ -195,8 +198,9 @@ export function useSheetDragToClose({
     [animateToOffset, isDragging],
   );
 
-  const backdropOpacity =
-    dragOffset > 0
+  const backdropOpacity = dismissedByDrag
+    ? 0
+    : dragOffset > 0
       ? Math.max(0, 1 - dragOffset / getPanelHeight())
       : undefined;
 
@@ -210,6 +214,7 @@ export function useSheetDragToClose({
     dragOffset,
     isDragging,
     isAnimating,
+    dismissedByDrag,
     backdropOpacity,
     panelStyle,
     dragZoneProps: dragEnabled

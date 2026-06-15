@@ -8,9 +8,9 @@
 
 @layer base {
   :root {
-    --bottom-nav-content: 3.25rem;
+    --bottom-nav-content: 4rem;
     --bottom-nav-total: calc(
-      var(--bottom-nav-content) + env(safe-area-inset-bottom, 0px)
+      var(--bottom-nav-content) + env(safe-area-inset-bottom, 0px) + 0.5rem
     );
   }
 
@@ -112,6 +112,32 @@
   [data-view-panel] {
     animation: none !important;
   }
+
+  [data-skeleton],
+  .splash-pulse,
+  .splash-dot {
+    animation: none !important;
+  }
+}
+
+@keyframes splash-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.88;
+    transform: scale(0.98);
+  }
+}
+
+.splash-pulse {
+  animation: splash-pulse 2s ease-in-out infinite;
+}
+
+.splash-dot {
+  animation: splash-pulse 1.2s ease-in-out infinite;
 }
 
 @keyframes bottom-sheet-enter {

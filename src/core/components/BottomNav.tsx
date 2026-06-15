@@ -7,6 +7,7 @@ import {
   isMasterRoute,
 } from "../config/navigation";
 import { useMenu } from "../hooks/useMenu";
+import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import type { TranslationKey } from "../i18n";
 import { MasterMenuSheet } from "./MasterMenuSheet";
@@ -25,7 +26,8 @@ export function BottomNav() {
   const location = useLocation();
   const [masterOpen, setMasterOpen] = useState(false);
 
-  const primaryItems = buildPrimaryNavItems(menu);
+  const { acl } = useAuth();
+  const primaryItems = buildPrimaryNavItems(menu, acl);
   const masterGroup = getMasterGroup(menu);
   const masterActive = isMasterRoute(location.pathname);
 
@@ -35,7 +37,7 @@ export function BottomNav() {
         className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95"
         aria-label={translate("navOpenMenu")}
       >
-        <div className="mx-auto flex min-h-[3.25rem] max-w-lg items-stretch justify-around px-1 pt-2 pb-2">
+        <div className="mx-auto flex min-h-[var(--bottom-nav-content)] max-w-lg items-stretch justify-around px-1 pt-2 pb-2">
           {primaryItems.map((item) =>
             item.path ? (
               <NavLink

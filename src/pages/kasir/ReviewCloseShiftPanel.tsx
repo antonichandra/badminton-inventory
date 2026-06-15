@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { InputNumber } from "../../core/components/forms/InputNumber";
 import { Button } from "../../core/components/ui/Button";
+import { LoadingState } from "../../core/components/ui/LoadingState";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
 import { formatRupiah } from "./utils";
@@ -98,7 +99,7 @@ export function ReviewCloseShiftPanel({
   };
 
   if (pending === undefined) {
-    return <p className="text-slate-500">{translate("loading")}</p>;
+    return <LoadingState variant="page" className="py-8" />;
   }
 
   if (pending.length === 0) {

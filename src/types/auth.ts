@@ -11,7 +11,8 @@ export type AclPermission =
   | "master_business"
   | "master_plan"
   | "business"
-  | "kasir";
+  | "kasir"
+  | "analytics";
 
 export interface Role {
   _id: Id<"roles">;

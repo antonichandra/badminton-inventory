@@ -1,5 +1,6 @@
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { formatRupiah } from "./utils";
 
@@ -9,12 +10,16 @@ interface ShiftLiveStatsProps {
 
 export function ShiftLiveStats({ sessionToken }: ShiftLiveStatsProps) {
   const { translate } = useLanguage();
+  const { role } = useAuth();
+  const showGrossProfit = role?.name === "ADMIN";
   const stats = useQuery(api.shifts.getShiftLiveStats, { sessionToken });
 
   if (!stats) return null;
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div
+      className={`grid grid-cols-2 gap-2 ${showGrossProfit && stats.grossProfit !== undefined ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}
+    >
       <StatCard
         label={translate("kasirRevenue")}
         value={formatRupiah(stats.paidRevenue)}
@@ -23,10 +28,12 @@ export function ShiftLiveStats({ sessionToken }: ShiftLiveStatsProps) {
         label={translate("kasirUnpaid")}
         value={formatRupiah(stats.unpaidRevenue)}
       />
-      <StatCard
-        label={translate("kasirGrossProfit")}
-        value={formatRupiah(stats.grossProfit)}
-      />
+      {showGrossProfit && stats.grossProfit !== undefined && (
+        <StatCard
+          label={translate("kasirGrossProfit")}
+          value={formatRupiah(stats.grossProfit)}
+        />
+      )}
       <StatCard
         label={translate("kasirTopProduct")}
         value={stats.topProducts[0]?.productName ?? "—"}

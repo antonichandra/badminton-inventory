@@ -5,6 +5,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { formatDateOnly, formatDateTime } from "../../../core/utils/formatDate";
 import { BottomSheet } from "../../../core/components/ui/BottomSheet";
 import { Button } from "../../../core/components/ui/Button";
+import { LoadingState } from "../../../core/components/ui/LoadingState";
 import { useLanguage } from "../../../core/context/LanguageContext";
 import { useToast } from "../../../core/context/ToastContext";
 import { formatRupiah } from "../../kasir/utils";
@@ -90,9 +91,7 @@ export function SupplierReceiptDetailSheet({
       footer={footer}
     >
       {!detail ? (
-        <p className="py-6 text-center text-sm text-slate-500">
-          {translate("loading")}
-        </p>
+        <LoadingState variant="sheet" />
       ) : (
         <div className="space-y-4">
           <div className="rounded-lg bg-slate-50 p-4 text-sm dark:bg-slate-800">

@@ -10,6 +10,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { BottomSheet } from "../../core/components/ui/BottomSheet";
+import { Button } from "../../core/components/ui/Button";
 import { InputNumber } from "../../core/components/forms/InputNumber";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
@@ -155,7 +156,26 @@ export const PayLinesSheet = forwardRef<PayLinesSheetHandle, PayLinesSheetProps>
         open={open}
         onClose={onClose}
         title={translate("kasirPay")}
-        bottomInset="5.75rem"
+        footer={
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              className="flex-1"
+              onClick={onClose}
+              disabled={isSaving}
+            >
+              {translate("cancel")}
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => void handlePay()}
+              loading={isSaving}
+              disabled={!canPay}
+            >
+              {translate("kasirPay")}
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-500">{translate("kasirSelectLines")}</p>

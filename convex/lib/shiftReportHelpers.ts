@@ -6,6 +6,7 @@ import {
   getShiftSalesStats,
   getShiftStockReconciliation,
 } from "./shiftHelpers";
+import { resolveSaleLineCogs } from "./inventoryCostHelpers";
 
 export const SHIFT_RETENTION_LIMIT = 10;
 
@@ -24,6 +25,7 @@ export async function aggregateDailyRollupsFromSaleLines(
     .collect();
 
   const byDate = new Map<string, { totalRevenue: number; totalCogs: number }>();
+  const unitCostCache = new Map();
 
   for (const line of lines) {
     if (line.paymentStatus !== "PAID") continue;
@@ -32,7 +34,12 @@ export async function aggregateDailyRollupsFromSaleLines(
 
     const entry = byDate.get(date) ?? { totalRevenue: 0, totalCogs: 0 };
     entry.totalRevenue += line.lineTotal;
-    entry.totalCogs += line.cogsTotal ?? 0;
+    entry.totalCogs += await resolveSaleLineCogs(
+      ctx,
+      businessId,
+      line,
+      unitCostCache,
+    );
     byDate.set(date, entry);
   }
 
@@ -186,6 +193,8 @@ export async function updateDailyRollups(
     .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
     .collect();
 
+  const unitCostCache = new Map();
+
   for (const line of lines) {
     if (line.paymentStatus !== "PAID") continue;
     if (formatDateKey(line.paidAt ?? line.createdAt) !== date) continue;
@@ -198,7 +207,12 @@ export async function updateDailyRollups(
     };
     entry.qty += line.qty;
     entry.revenue += line.lineTotal;
-    entry.cogs += line.cogsTotal ?? 0;
+    entry.cogs += await resolveSaleLineCogs(
+      ctx,
+      businessId,
+      line,
+      unitCostCache,
+    );
     productMap.set(key, entry);
   }
 
@@ -251,6 +265,17 @@ export async function deleteShiftCompletely(
 ) {
   const shift = await ctx.db.get(shiftId);
   if (!shift || shift.status !== "CLOSED") return;
+
+  await forceDeleteShift(ctx, shiftId);
+}
+
+/** Deletes a shift and all related rows regardless of status (ops reset). */
+export async function forceDeleteShift(
+  ctx: MutationCtx,
+  shiftId: Id<"shifts">,
+) {
+  const shift = await ctx.db.get(shiftId);
+  if (!shift) return;
 
   await purgeShiftDetailRows(ctx, shiftId, shift.businessId);
 

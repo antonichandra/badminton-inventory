@@ -1,10 +1,12 @@
 import { useLanguage } from "../../core/context/LanguageContext";
+import { ShiftQrisBreakdown } from "./ShiftQrisBreakdown";
 import { formatRupiah } from "./utils";
 
 export interface ShiftCashBreakdownProps {
   openingCash: number;
   totalSales: number;
   verifiedQris: number;
+  recordedQrisSales?: number;
   expenses: number;
   deposits: number;
   expectedCashInDrawer: number;
@@ -22,6 +24,7 @@ export function ShiftCashBreakdown({
   openingCash,
   totalSales,
   verifiedQris,
+  recordedQrisSales,
   expenses,
   deposits,
   expectedCashInDrawer,
@@ -85,6 +88,13 @@ export function ShiftCashBreakdown({
           {missInputQtyTotal ?? 0}
         </p>
       ) : null}
+
+      {!compact && recordedQrisSales !== undefined && (
+        <ShiftQrisBreakdown
+          recordedQrisSales={recordedQrisSales}
+          verifiedQris={verifiedQris}
+        />
+      )}
 
       <p className="font-medium text-slate-900 dark:text-white">
         {translate("kasirCashReconTitle")}
