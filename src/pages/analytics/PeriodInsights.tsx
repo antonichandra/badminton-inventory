@@ -78,8 +78,8 @@ export function PeriodInsights({
   const groupsLoading = topGroups === undefined;
 
   return (
-    <div className="mb-6 grid gap-4 lg:grid-cols-2">
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-2">
+      <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div className="mb-3">
           <h3 className="font-semibold text-slate-900 dark:text-white">
             {labels.topProductsTitle}
@@ -92,40 +92,42 @@ export function PeriodInsights({
         ) : topProducts.length === 0 ? (
           <p className="text-sm text-slate-500">{labels.emptyProducts}</p>
         ) : (
-          <KasirTableShell>
-            <table className={kasirTableClass}>
-              <thead className={kasirTheadClass}>
-                <tr>
-                  <KasirTh>{labels.productName}</KasirTh>
-                  <KasirTh>{labels.price}</KasirTh>
-                  <KasirTh>{labels.profit}</KasirTh>
-                  <KasirTh className="text-right">{labels.qty}</KasirTh>
-                </tr>
-              </thead>
-              <tbody className={kasirTbodyClass}>
-                {topProducts.map((product) => (
-                  <tr key={product.productId} className={kasirTrClass}>
-                    <KasirTd className="font-medium text-slate-900 dark:text-white">
-                      {product.productName}
-                    </KasirTd>
-                    <KasirTd className="tabular-nums">
-                      {formatRupiah(product.unitPrice)}
-                    </KasirTd>
-                    <KasirTd className="tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
-                      {formatRupiah(product.grossProfit)}
-                    </KasirTd>
-                    <KasirTd className="text-right tabular-nums font-semibold">
-                      {product.qty}
-                    </KasirTd>
+          <div className="min-w-0 overflow-x-auto">
+            <KasirTableShell>
+              <table className={kasirTableClass}>
+                <thead className={kasirTheadClass}>
+                  <tr>
+                    <KasirTh className="whitespace-nowrap">{labels.productName}</KasirTh>
+                    <KasirTh className="whitespace-nowrap">{labels.price}</KasirTh>
+                    <KasirTh className="whitespace-nowrap">{labels.profit}</KasirTh>
+                    <KasirTh className="whitespace-nowrap text-right">{labels.qty}</KasirTh>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </KasirTableShell>
+                </thead>
+                <tbody className={kasirTbodyClass}>
+                  {topProducts.map((product) => (
+                    <tr key={product.productId} className={kasirTrClass}>
+                      <KasirTd className="whitespace-nowrap font-medium text-slate-900 dark:text-white">
+                        {product.productName}
+                      </KasirTd>
+                      <KasirTd className="whitespace-nowrap tabular-nums">
+                        {formatRupiah(product.unitPrice)}
+                      </KasirTd>
+                      <KasirTd className="whitespace-nowrap tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
+                        {formatRupiah(product.grossProfit)}
+                      </KasirTd>
+                      <KasirTd className="whitespace-nowrap text-right tabular-nums font-semibold">
+                        {product.qty}
+                      </KasirTd>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </KasirTableShell>
+          </div>
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div className="mb-3">
           <h3 className="font-semibold text-slate-900 dark:text-white">
             {labels.topGroupsTitle}
