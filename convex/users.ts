@@ -535,3 +535,97 @@ export const approvePendingAdmin = mutation({
     };
   },
 });
+
+export const approvePendingUser = mutation({
+  args: {
+    sessionToken: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const sessionData = await assertCanManageUsers(ctx, args.sessionToken);
+    const callerRole = await getRoleById(ctx, sessionData.user.roleId);
+
+    if (!callerRole || callerRole.name !== "SUPER_ADMIN") {
+      throw new Error("FORBIDDEN");
+    }
+
+    if (args.userId === sessionData.user._id) {
+      throw new Error("CANNOT_APPROVE_SELF");
+    }
+
+    const targetUser = await ctx.db.get(args.userId);
+    if (!targetUser) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    if (targetUser.status !== "PENDING") {
+      throw new Error("USER_NOT_PENDING");
+    }
+
+    const targetRole = await getRoleById(ctx, targetUser.roleId);
+    if (!targetRole || targetRole.name !== "PENDING") {
+      throw new Error("USER_NOT_PENDING_ROLE");
+    }
+
+    const staffRole = await ctx.db
+      .query("roles")
+      .withIndex("by_name", (q) => q.eq("name", "STAFF"))
+      .unique();
+
+    if (!staffRole) {
+      throw new Error("STAFF role not found. Run roles:seedRoles first.");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(targetUser._id, {
+      status: "APPROVED",
+      roleId: staffRole._id,
+      updatedAt: now,
+    });
+
+    return {
+      userId: targetUser._id,
+      email: targetUser.email,
+      name: targetUser.name,
+      status: "APPROVED" as const,
+      roleName: staffRole.name,
+    };
+  },
+});
+
+export const deletePendingUser = mutation({
+  args: {
+    sessionToken: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const sessionData = await assertCanManageUsers(ctx, args.sessionToken);
+    const callerRole = await getRoleById(ctx, sessionData.user.roleId);
+
+    if (!callerRole || callerRole.name !== "SUPER_ADMIN") {
+      throw new Error("FORBIDDEN");
+    }
+
+    if (args.userId === sessionData.user._id) {
+      throw new Error("CANNOT_DELETE_SELF");
+    }
+
+    const targetUser = await ctx.db.get(args.userId);
+    if (!targetUser) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    if (targetUser.status !== "PENDING") {
+      throw new Error("USER_NOT_DELETABLE");
+    }
+
+    const targetRole = await getRoleById(ctx, targetUser.roleId);
+    if (!targetRole || targetRole.name !== "PENDING") {
+      throw new Error("USER_NOT_PENDING_ROLE");
+    }
+
+    await deleteStaffUserRecords(ctx, targetUser.email);
+
+    return { success: true };
+  },
+});
