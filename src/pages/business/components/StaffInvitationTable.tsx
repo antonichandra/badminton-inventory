@@ -51,7 +51,6 @@ interface StaffInvitationTableProps {
     resend: string;
     delete: string;
     editRole: string;
-    loading: string;
     empty: string;
     staffQuota: string;
     limitReached: string;
@@ -305,7 +304,6 @@ export function StaffInvitationTable({
         data={invitations}
         getRowKey={(row) => row._id}
         isLoading={isLoading}
-        loadingMessage={labels.loading}
         emptyMessage={labels.empty}
       />
     </>

@@ -22,20 +22,20 @@ export function ProtectedLayout() {
 
   return (
     <BusinessProvider>
-      <div className="flex min-h-svh bg-slate-50 dark:bg-slate-950">
+      <div className="flex h-svh min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
         {!useBottomNav && (
           <Sidebar
             isOpen={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
           />
         )}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <Topbar
             showMenuButton={!useBottomNav}
             onMenuOpen={() => setSidebarOpen(true)}
           />
           <main
-            className={`flex-1 overflow-y-auto p-4 sm:p-6 ${
+            className={`min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 ${
               useBottomNav ? "pb-[var(--bottom-nav-total)]" : ""
             }`}
           >

@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { BottomSheet } from "../../../core/components/ui/BottomSheet";
+import { Skeleton } from "../../../core/components/ui/Skeleton";
 import { useLanguage } from "../../../core/context/LanguageContext";
 import { formatDateTime } from "../../../core/utils/formatDate";
 import { formatRupiah } from "../../kasir/utils";
@@ -62,9 +63,16 @@ export function ProductPriceHistorySheet({
       }
     >
       {history === undefined ? (
-        <p className="py-6 text-center text-sm text-slate-500">
-          {translate("loading")}
-        </p>
+        <div className="space-y-3" aria-busy="true">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="flex gap-3">
+              <Skeleton className="h-4 flex-1" />
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+          ))}
+        </div>
       ) : history.length === 0 ? (
         <p className="py-6 text-center text-sm text-slate-500">
           {translate("productPriceHistoryEmpty")}

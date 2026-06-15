@@ -1,21 +1,17 @@
 import { NavLink } from "react-router-dom";
-import { ChevronDown, Store, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { MenuItem } from "../../types/auth";
-import {
-  ANALYTICS_NAV,
-  DASHBOARD_NAV,
-  getSecondaryMenuItems,
-  getMasterGroup,
-} from "../config/navigation";
+import { buildPrimaryNavItems, getMasterGroup } from "../config/navigation";
 import { useAuth } from "../context/AuthContext";
 import { useBusiness } from "../context/BusinessContext";
 import { useMenu } from "../hooks/useMenu";
 import { useLanguage } from "../context/LanguageContext";
 import type { TranslationKey } from "../i18n";
 import { PlanBadge } from "./PlanBadge";
+import { CourtlyLogo } from "./CourtlyLogo";
 import { Button } from "./ui/Button";
 import { NavMenuIcon } from "./nav/NavMenuIcon";
 
@@ -95,7 +91,7 @@ function MenuGroup({
 export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const menu = useMenu();
   const { translate } = useLanguage();
-  const { sessionToken, role } = useAuth();
+  const { sessionToken, role, acl } = useAuth();
   const { activeBusiness } = useBusiness();
   const isAdmin = role?.name === "ADMIN";
 
@@ -106,8 +102,8 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const headerTitle = activeBusiness?.name ?? translate("appName");
   const adminPlanName = quotaSummary?.planName ?? translate("usersNoPlan");
+  const primaryItems = buildPrimaryNavItems(menu, acl);
   const masterGroup = getMasterGroup(menu);
-  const secondaryItems = getSecondaryMenuItems(menu);
 
   return (
     <>
@@ -121,15 +117,13 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-svh min-h-svh max-h-svh w-[min(100vw-1rem,17rem)] shrink-0 flex-col border-r border-slate-200 bg-white shadow-xl transition-transform duration-200 ease-in-out sm:w-64 lg:static lg:h-auto lg:min-h-screen lg:max-h-none lg:translate-x-0 lg:self-stretch lg:shadow-none dark:border-slate-800 dark:bg-slate-900 ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-50 flex h-svh min-h-0 max-h-svh w-[min(100vw-1rem,17rem)] shrink-0 flex-col border-r border-slate-200 bg-white shadow-xl transition-transform duration-200 ease-in-out sm:w-64 lg:relative lg:z-auto lg:h-svh lg:max-h-svh lg:translate-x-0 lg:shadow-none dark:border-slate-800 dark:bg-slate-900 ${
+          isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 sm:px-5 sm:py-5 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
-              <Store className="h-5 w-5" />
-            </div>
+            <CourtlyLogo size={36} className="shrink-0" />
             <div className="min-w-0 flex-1 text-left">
               <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
                 {headerTitle}
@@ -156,15 +150,10 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </div>
 
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
-          <div className="mb-2">
-            <MenuLink item={DASHBOARD_NAV} onNavigate={onClose} />
-          </div>
-          <div className="mb-2">
-            <MenuLink item={ANALYTICS_NAV} onNavigate={onClose} />
-          </div>
-
-          {secondaryItems.map((item) => (
-            <MenuLink key={item.id} item={item} onNavigate={onClose} />
+          {primaryItems.map((item) => (
+            <div key={item.id} className="mb-2">
+              <MenuLink item={item} onNavigate={onClose} />
+            </div>
           ))}
 
           {masterGroup && (

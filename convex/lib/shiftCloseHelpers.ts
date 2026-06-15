@@ -271,7 +271,7 @@ export async function finalizeShiftClose(
   return {
     summary: summaryData,
     cashSummary,
-    salesByPriceTier: await getShiftSalesByPriceTier(ctx, shift._id),
+    salesByPriceTier: await getShiftSalesByPriceTier(ctx, shift._id, shift.businessId),
     totalRevenue: summaryData.totalRevenue,
   };
 }

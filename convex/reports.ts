@@ -21,7 +21,7 @@ export const getDailyRollups = query({
   },
   handler: async (ctx, args) => {
     const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
-    if (!hasAcl(role, "kasir")) return [];
+    if (!hasAcl(role, "analytics")) return [];
 
     const businessId = await resolveScopedBusinessId(
       ctx,
@@ -45,7 +45,7 @@ export const getMonthlyComparison = query({
   },
   handler: async (ctx, args) => {
     const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
-    if (!hasAcl(role, "kasir")) {
+    if (!hasAcl(role, "analytics")) {
       return { thisMonth: 0, lastMonth: 0 };
     }
 
@@ -93,6 +93,7 @@ export const getExpiringBatches = query({
     sessionToken: v.string(),
     businessId: v.optional(v.id("businesses")),
     withinDays: v.optional(v.number()),
+    limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
@@ -110,8 +111,10 @@ export const getExpiringBatches = query({
 
     await assertBusinessAccess(ctx, user, role, businessId);
 
-    const withinDays = args.withinDays ?? 30;
-    const cutoff = Date.now() + withinDays * 24 * 60 * 60 * 1000;
+    const cutoff =
+      args.withinDays != null
+        ? Date.now() + args.withinDays * 24 * 60 * 60 * 1000
+        : null;
 
     const batches = await ctx.db
       .query("stockReceiptItems")
@@ -121,7 +124,7 @@ export const getExpiringBatches = query({
     const results = [];
     for (const batch of batches) {
       if (batch.qtyRemaining <= 0 || !batch.expiresAt) continue;
-      if (batch.expiresAt > cutoff) continue;
+      if (cutoff != null && batch.expiresAt > cutoff) continue;
 
       const product = await ctx.db.get(batch.productId);
       results.push({
@@ -133,7 +136,15 @@ export const getExpiringBatches = query({
       });
     }
 
-    return results.sort((a, b) => (a.expiresAt ?? 0) - (b.expiresAt ?? 0));
+    const sorted = results.sort(
+      (a, b) => (a.expiresAt ?? 0) - (b.expiresAt ?? 0),
+    );
+
+    if (args.limit != null) {
+      return sorted.slice(0, args.limit);
+    }
+
+    return sorted;
   },
 });
 

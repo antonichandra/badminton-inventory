@@ -1,192 +1,28 @@
-import { useId, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { PageHeader } from "../core/components/PageHeader";
 import { PermissionGuard } from "../core/components/PermissionGuard";
+import { MetricCard } from "../core/components/ui/MetricCard";
 import { useAuth } from "../core/context/AuthContext";
 import { useBusiness } from "../core/context/BusinessContext";
 import { useLanguage } from "../core/context/LanguageContext";
 import { formatDateOnly } from "../core/utils/formatDate";
 import { formatRupiah } from "./kasir/utils";
-
-const CHART_DAYS = 30;
-const X_AXIS_TICKS = 6;
-
-function toDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function buildDailyChartSeries(
-  rollups: { date: string; totalRevenue: number }[],
-  days: number,
-) {
-  const byDate = new Map(rollups.map((row) => [row.date, row.totalRevenue]));
-  const series = [];
-
-  for (let offset = days - 1; offset >= 0; offset -= 1) {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - offset);
-    const key = toDateKey(date);
-    series.push({
-      date: key,
-      totalRevenue: byDate.get(key) ?? 0,
-    });
-  }
-
-  return series;
-}
-
-function getXAxisTickIndices(count: number, maxTicks: number): number[] {
-  if (count <= 1) return [0];
-  if (count <= maxTicks) {
-    return Array.from({ length: count }, (_, index) => index);
-  }
-
-  const step = Math.ceil((count - 1) / (maxTicks - 1));
-  const ticks: number[] = [];
-  for (let index = 0; index < count; index += step) {
-    ticks.push(index);
-  }
-  if (ticks[ticks.length - 1] !== count - 1) {
-    ticks.push(count - 1);
-  }
-  return ticks;
-}
-
-function formatAxisLabel(dateKey: string): string {
-  const [, month, day] = dateKey.split("-");
-  return `${Number(day)}/${Number(month)}`;
-}
-
-interface DailySalesLineChartProps {
-  series: { date: string; totalRevenue: number }[];
-  maxRevenue: number;
-  formatValue: (amount: number) => string;
-}
-
-function DailySalesLineChart({
-  series,
-  maxRevenue,
-  formatValue,
-}: DailySalesLineChartProps) {
-  const gradientId = useId().replace(/:/g, "");
-  const width = 360;
-  const height = 120;
-  const pad = { top: 10, right: 8, bottom: 22, left: 8 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-  const xDenom = Math.max(series.length - 1, 1);
-  const yGridLines = 4;
-
-  const points = series.map((day, index) => ({
-    ...day,
-    x: pad.left + (index / xDenom) * plotW,
-    y: pad.top + plotH - (day.totalRevenue / maxRevenue) * plotH,
-  }));
-
-  const linePath = points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
-
-  const baseline = pad.top + plotH;
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
-
-  const xTicks = getXAxisTickIndices(series.length, X_AXIS_TICKS);
-
-  const horizontalGridYs = useMemo(
-    () =>
-      Array.from({ length: yGridLines + 1 }, (_, index) =>
-        pad.top + (plotH / yGridLines) * index,
-      ),
-    [plotH, yGridLines],
-  );
-
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="h-auto w-full max-h-[320px] text-emerald-500"
-      role="img"
-      aria-hidden
-    >
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
-          <stop offset="85%" stopColor="#10b981" stopOpacity="0.1" />
-          <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-
-      {horizontalGridYs.map((y) => (
-        <line
-          key={`h-${y}`}
-          x1={pad.left}
-          y1={y}
-          x2={width - pad.right}
-          y2={y}
-          className="stroke-slate-200 dark:stroke-slate-700/80"
-          strokeWidth="0.5"
-          strokeDasharray="1.2 1.4"
-        />
-      ))}
-      {xTicks.map((index) => (
-        <line
-          key={`v-${series[index].date}`}
-          x1={points[index].x}
-          y1={pad.top}
-          x2={points[index].x}
-          y2={baseline}
-          className="stroke-slate-200 dark:stroke-slate-700/80"
-          strokeWidth="0.5"
-          strokeDasharray="1.2 1.4"
-        />
-      ))}
-
-      <path d={areaPath} fill={`url(#${gradientId})`} />
-      <path
-        d={linePath}
-        fill="none"
-        className="stroke-emerald-500"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {points
-        .filter((point) => point.totalRevenue > 0)
-        .map((point) => (
-          <circle
-            key={point.date}
-            cx={point.x}
-            cy={point.y}
-            r="2.5"
-            className="fill-emerald-500 stroke-white dark:stroke-slate-900"
-            strokeWidth="0.5"
-          >
-            <title>{`${formatAxisLabel(point.date)}: ${formatValue(point.totalRevenue)}`}</title>
-          </circle>
-        ))}
-      {xTicks.map((index) => (
-        <text
-          key={series[index].date}
-          x={points[index].x}
-          y={height - 8}
-          textAnchor="middle"
-          className="fill-slate-400 text-[6px]"
-        >
-          {formatAxisLabel(series[index].date)}
-        </text>
-      ))}
-    </svg>
-  );
-}
+import {
+  buildDailyChartSeries,
+  CHART_PERIOD_OPTIONS,
+  formatGrowthPercent,
+  type ChartPeriod,
+} from "./analytics/chartUtils";
+import { DailySalesChart, type ChartMetric } from "./analytics/DailySalesChart";
 
 export function AnalyticsPage() {
   const { translate, language } = useLanguage();
   const { sessionToken } = useAuth();
   const { activeBusinessId } = useBusiness();
+  const [period, setPeriod] = useState<ChartPeriod>(30);
+  const [metric, setMetric] = useState<ChartMetric>("revenue");
 
   const rollups = useQuery(
     api.reports.getDailyRollups,
@@ -194,7 +30,7 @@ export function AnalyticsPage() {
       ? {
           sessionToken,
           businessId: activeBusinessId ?? undefined,
-          days: CHART_DAYS,
+          days: period,
         }
       : "skip",
   );
@@ -207,7 +43,11 @@ export function AnalyticsPage() {
   const expiring = useQuery(
     api.reports.getExpiringBatches,
     sessionToken
-      ? { sessionToken, businessId: activeBusinessId ?? undefined, withinDays: 30 }
+      ? {
+          sessionToken,
+          businessId: activeBusinessId ?? undefined,
+          withinDays: 30,
+        }
       : "skip",
   );
   const lowStock = useQuery(
@@ -216,58 +56,174 @@ export function AnalyticsPage() {
       ? { sessionToken, businessId: activeBusinessId ?? undefined, maxQty: 5 }
       : "skip",
   );
+  const liveStats = useQuery(
+    api.shifts.getShiftLiveStats,
+    sessionToken ? { sessionToken } : "skip",
+  );
 
   const chartSeries = useMemo(
-    () => buildDailyChartSeries(rollups ?? [], CHART_DAYS),
-    [rollups],
+    () => buildDailyChartSeries(rollups ?? [], period),
+    [rollups, period],
   );
 
-  const maxRevenue = Math.max(
-    ...chartSeries.map((day) => day.totalRevenue),
-    1,
-  );
+  const periodStats = useMemo(() => {
+    const totalRevenue = chartSeries.reduce((sum, d) => sum + d.totalRevenue, 0);
+    const totalProfit = chartSeries.reduce((sum, d) => sum + d.grossProfit, 0);
+    const activeDays = chartSeries.filter((d) => d.totalRevenue > 0).length;
+    const margin =
+      totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0;
+    const avgPerDay =
+      activeDays > 0 ? Math.round(totalRevenue / activeDays) : 0;
+
+    return { totalRevenue, totalProfit, activeDays, margin, avgPerDay };
+  }, [chartSeries]);
+
+  const monthGrowth =
+    monthly != null
+      ? formatGrowthPercent(monthly.thisMonth, monthly.lastMonth)
+      : null;
 
   const hasSales = chartSeries.some((day) => day.totalRevenue > 0);
+  const loading = rollups === undefined || monthly === undefined;
+
+  const periodLabel = (days: ChartPeriod) => {
+    if (days === 7) return translate("analyticsPeriod7");
+    if (days === 90) return translate("analyticsPeriod90");
+    return translate("analyticsPeriod30");
+  };
 
   return (
-    <PermissionGuard permission="kasir">
+    <PermissionGuard permission="analytics">
       <PageHeader
         title={translate("analyticsTitle")}
         subtitle={translate("analyticsSubtitle")}
       />
 
-      {monthly && (
-        <div className="mb-6 grid grid-cols-2 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <p className="text-sm text-slate-500">{translate("kasirThisMonth")}</p>
-            <p className="mt-1 text-2xl font-bold">
-              {formatRupiah(monthly.thisMonth)}
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <p className="text-sm text-slate-500">{translate("kasirLastMonth")}</p>
-            <p className="mt-1 text-2xl font-bold">
-              {formatRupiah(monthly.lastMonth)}
-            </p>
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MetricCard
+          label={translate("kasirThisMonth")}
+          value={formatRupiah(monthly?.thisMonth ?? 0)}
+          loading={loading}
+          delta={
+            monthGrowth
+              ? {
+                  text: `${monthGrowth.text} ${translate("dashboardVsLastMonth")}`,
+                  tone: monthGrowth.tone,
+                }
+              : undefined
+          }
+        />
+        <MetricCard
+          label={translate("analyticsPeriodTotal")}
+          value={formatRupiah(periodStats.totalRevenue)}
+          loading={loading}
+        />
+        <MetricCard
+          label={translate("analyticsMargin")}
+          value={`${periodStats.margin}%`}
+          loading={loading}
+          delta={{
+            text: formatRupiah(periodStats.totalProfit),
+            tone: "neutral",
+          }}
+        />
+        <MetricCard
+          label={translate("analyticsAvgPerDay")}
+          value={formatRupiah(periodStats.avgPerDay)}
+          loading={loading}
+          delta={{
+            text: `${periodStats.activeDays} ${translate("analyticsActiveDays")}`,
+            tone: "neutral",
+          }}
+        />
+      </div>
+
+      <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-semibold text-slate-900 dark:text-white">
+            {translate("analyticsDailyChart")}
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
+              {CHART_PERIOD_OPTIONS.map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => setPeriod(days)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    period === days
+                      ? "bg-emerald-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {periodLabel(days)}
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
+              {(
+                [
+                  ["revenue", "analyticsMetricRevenue"],
+                  ["profit", "analyticsMetricProfit"],
+                ] as const
+              ).map(([key, labelKey]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMetric(key)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    metric === key
+                      ? key === "revenue"
+                        ? "bg-emerald-600 text-white"
+                        : "bg-indigo-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {translate(labelKey)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      )}
 
-      <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-        <h3 className="mb-4 font-semibold">{translate("analyticsDailyChart")}</h3>
         {!hasSales && rollups !== undefined ? (
           <p className="text-sm text-slate-500">{translate("analyticsNoSales")}</p>
+        ) : rollups === undefined ? (
+          <div className="h-40 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
         ) : (
-          <DailySalesLineChart
+          <DailySalesChart
             series={chartSeries}
-            maxRevenue={maxRevenue}
+            metric={metric}
             formatValue={formatRupiah}
           />
         )}
       </section>
 
-      <div className="space-y-4">
-        <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        {liveStats && liveStats.topProducts.length > 0 && (
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+              {translate("kasirTopProducts")}
+            </h3>
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {liveStats.topProducts.slice(0, 5).map((product) => (
+                <li
+                  key={product.productId}
+                  className="flex items-center justify-between gap-3 py-2 text-sm first:pt-0"
+                >
+                  <span className="font-medium text-slate-900 dark:text-white">
+                    {product.productName}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-slate-600 dark:text-slate-400">
+                    {product.qty} · {formatRupiah(product.revenue)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <h3 className="font-semibold text-slate-900 dark:text-white">
             {translate("analyticsLowStock")}
           </h3>
@@ -288,8 +244,8 @@ export function AnalyticsPage() {
                   <span
                     className={
                       item.qtyOnHand === 0
-                        ? "font-semibold text-red-600 dark:text-red-400"
-                        : "text-amber-700 dark:text-amber-400"
+                        ? "rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-400"
+                        : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-400"
                     }
                   >
                     {item.qtyOnHand} {item.unit}
@@ -299,26 +255,31 @@ export function AnalyticsPage() {
             </ul>
           )}
         </section>
-
-        {(expiring ?? []).length > 0 && (
-          <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
-            <h3 className="font-semibold text-amber-800 dark:text-amber-300">
-              {translate("analyticsExpiring")}
-            </h3>
-            <ul className="mt-2 space-y-1 text-sm">
-              {expiring!.map((batch, i) => (
-                <li key={i} className="flex justify-between gap-3">
-                  <span>{batch.productName}</span>
-                  <span className="shrink-0 text-amber-900 dark:text-amber-200">
-                    {batch.qtyRemaining} pcs ·{" "}
-                    {formatDateOnly(batch.expiresAt!, language)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
+
+      {(expiring ?? []).length > 0 && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
+          <h3 className="font-semibold text-amber-800 dark:text-amber-300">
+            {translate("analyticsExpiring")}
+          </h3>
+          <ul className="mt-2 space-y-1 text-sm">
+            {expiring!.map((batch, index) => (
+              <li
+                key={index}
+                className="flex justify-between gap-3 border-b border-amber-200/60 py-2 last:border-0 dark:border-amber-800/40"
+              >
+                <span className="font-medium text-amber-950 dark:text-amber-100">
+                  {batch.productName}
+                </span>
+                <span className="shrink-0 text-amber-900 dark:text-amber-200">
+                  {batch.qtyRemaining} pcs ·{" "}
+                  {formatDateOnly(batch.expiresAt!, language)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </PermissionGuard>
   );
 }

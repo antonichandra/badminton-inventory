@@ -11,6 +11,8 @@ interface ShiftExportSummary {
   grossProfit: number;
   cashSales?: number;
   qrisSales?: number;
+  verifiedQris?: number;
+  recordedQrisSales?: number;
   expenses?: number;
   deposits?: number;
   variance?: number;
@@ -120,20 +122,35 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
   }
   if (summary?.qrisSales !== undefined) {
     summaryRows.push([
-      "QRIS",
+      data.language === "ID" ? "QRIS tercatat (penjualan)" : "Recorded QRIS (sales)",
       pdfAmount(summary.qrisSales),
+    ]);
+  }
+  const verifiedQris =
+    summary?.verifiedQris ?? data.closingQris;
+  if (verifiedQris !== undefined) {
+    summaryRows.push([
+      data.language === "ID"
+        ? "QRIS terverifikasi (rekening)"
+        : "Verified QRIS (bank)",
+      pdfAmount(verifiedQris),
+    ]);
+  }
+  const recordedQris =
+    summary?.recordedQrisSales ?? summary?.qrisSales;
+  if (
+    verifiedQris !== undefined &&
+    recordedQris !== undefined
+  ) {
+    summaryRows.push([
+      data.language === "ID" ? "Selisih QRIS" : "QRIS variance",
+      pdfAmount(verifiedQris - recordedQris),
     ]);
   }
   if (data.closingCash !== undefined) {
     summaryRows.push([
       data.language === "ID" ? "Kas ditutup" : "Closing cash",
       pdfAmount(data.closingCash),
-    ]);
-  }
-  if (data.closingQris !== undefined) {
-    summaryRows.push([
-      data.language === "ID" ? "QRIS ditutup" : "Closing QRIS",
-      pdfAmount(data.closingQris),
     ]);
   }
   if (summary?.expenses !== undefined) {

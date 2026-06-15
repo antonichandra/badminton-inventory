@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { LoadingState } from "./ui/LoadingState";
 import { useBusiness } from "../context/BusinessContext";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -11,11 +12,7 @@ export function BusinessScopeGate({ children }: BusinessScopeGateProps) {
   const { activeBusinessId, isLoading } = useBusiness();
 
   if (isLoading) {
-    return (
-      <p className="text-sm text-slate-500 dark:text-slate-400">
-        {translate("loading")}
-      </p>
-    );
+    return <LoadingState variant="page" className="py-8" />;
   }
 
   if (!activeBusinessId) {

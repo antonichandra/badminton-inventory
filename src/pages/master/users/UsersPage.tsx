@@ -617,7 +617,6 @@ export function UsersPage() {
         <AdminListStats
           sections={userStatsSections}
           isLoading={userStats === undefined}
-          loadingLabel={translate("loading")}
         />
       )}
 
@@ -646,7 +645,6 @@ export function UsersPage() {
         data={users ?? []}
         getRowKey={(row) => row._id}
         isLoading={users === undefined}
-        loadingMessage={translate("loading")}
         emptyMessage={translate("usersEmpty")}
       />
 

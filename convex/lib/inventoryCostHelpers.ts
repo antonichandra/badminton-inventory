@@ -1,13 +1,67 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+
+type UnitCostCache = Map<Id<"products">, number>;
+
+/** COGS for a paid sale line — uses stored value or HPP batch fallback (RETAIL only). */
+export async function resolveSaleLineCogs(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  line: Doc<"saleLines">,
+  unitCostCache: UnitCostCache = new Map(),
+): Promise<number> {
+  if (line.cogsTotal != null) return line.cogsTotal;
+
+  const product = await ctx.db.get(line.productId);
+  if (!product || product.type !== "RETAIL") return 0;
+
+  let unitCost = unitCostCache.get(line.productId);
+  if (unitCost === undefined) {
+    unitCost = await getFallbackUnitCost(ctx, businessId, line.productId);
+    unitCostCache.set(line.productId, unitCost);
+  }
+
+  return line.qty * unitCost;
+}
+
+export async function getLatestReceiptUnitCost(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  productId: Id<"products">,
+): Promise<number | null> {
+  const batches = await ctx.db
+    .query("stockReceiptItems")
+    .withIndex("by_business_and_product", (q) =>
+      q.eq("businessId", businessId).eq("productId", productId),
+    )
+    .collect();
+
+  if (batches.length === 0) return null;
+
+  const latest = batches.reduce((best, batch) =>
+    batch.createdAt > best.createdAt ? batch : best,
+  );
+  return latest.unitCost;
+}
 
 export async function getFallbackUnitCost(
   ctx: QueryCtx | MutationCtx,
   businessId: Id<"businesses">,
   productId: Id<"products">,
 ): Promise<number> {
-  const fromBatch = await getActiveUnitCostForProduct(ctx, businessId, productId);
-  if (fromBatch !== null) return fromBatch;
+  const fromActiveBatch = await getActiveUnitCostForProduct(
+    ctx,
+    businessId,
+    productId,
+  );
+  if (fromActiveBatch !== null) return fromActiveBatch;
+
+  const fromLatestReceipt = await getLatestReceiptUnitCost(
+    ctx,
+    businessId,
+    productId,
+  );
+  if (fromLatestReceipt !== null) return fromLatestReceipt;
 
   const product = await ctx.db.get(productId);
   return product?.defaultUnitCost ?? 0;

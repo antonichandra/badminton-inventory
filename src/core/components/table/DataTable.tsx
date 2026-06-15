@@ -1,5 +1,6 @@
 import { cn } from "../../utils/cn";
 import { Badge } from "./Badge";
+import { TableSkeletonRows } from "./TableSkeletonRows";
 import type { TableColumnConfig } from "./types";
 
 interface DataTableProps<T> {
@@ -8,7 +9,7 @@ interface DataTableProps<T> {
   emptyMessage?: string;
   getRowKey: (row: T) => string;
   isLoading?: boolean;
-  loadingMessage?: string;
+  skeletonRowCount?: number;
 }
 
 export function DataTable<T>({
@@ -17,7 +18,7 @@ export function DataTable<T>({
   emptyMessage = "Tidak ada data",
   getRowKey,
   isLoading = false,
-  loadingMessage = "Memuat data...",
+  skeletonRowCount = 6,
 }: DataTableProps<T>) {
   const renderCell = (column: TableColumnConfig<T>, row: T) => {
     switch (column.type) {
@@ -61,14 +62,10 @@ export function DataTable<T>({
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {isLoading ? (
-              <tr>
-                <td
-                  colSpan={columns.length}
-                  className="px-4 py-10 text-center text-sm text-slate-500"
-                >
-                  {loadingMessage}
-                </td>
-              </tr>
+              <TableSkeletonRows
+                columnCount={columns.length}
+                rowCount={skeletonRowCount}
+              />
             ) : data.length === 0 ? (
               <tr>
                 <td

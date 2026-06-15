@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation } from "convex/react";
 import { ChevronDown, MoreVertical, Minus, Plus, Trash2, Undo2 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
@@ -273,7 +274,7 @@ export function SaleFeed({
               <MoreVertical className="h-3.5 w-3.5" />
             </button>
             {showMenu && (
-              <div className="absolute right-0 z-10 mt-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+              <div className="absolute right-0 bottom-full z-50 mb-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
                 {isUnpaid ? (
                   <button
                     type="button"
@@ -344,7 +345,7 @@ export function SaleFeed({
         return (
           <section
             key={day.dayKey}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+            className="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
           >
             <button
               type="button"
@@ -411,57 +412,60 @@ export function SaleFeed({
         );
       })}
 
-      {payMode && (
-        <div
-          className={`fixed inset-x-0 z-[70] border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.15)] dark:border-slate-700 dark:bg-slate-900 ${
-            useBottomNav
-              ? "bottom-[var(--bottom-nav-total)]"
-              : "bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-          }`}
-        >
-          <div className="mx-auto flex max-w-7xl items-end justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                {translate("kasirPayTotal")}
-              </p>
-              <p className="mt-0.5 text-2xl font-bold tracking-tight text-emerald-700 dark:text-emerald-400">
-                {formatRupiah(selectedTotal)}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {translate("kasirPaySelectedCount").replace(
-                  "{count}",
-                  String(selectedLines.length),
-                )}
-              </p>
-            </div>
-            <div className="flex shrink-0 gap-2 pb-0.5">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (paySheetOpen) {
-                    onClosePaySheet();
-                  } else {
-                    onExitPayMode();
+      {payMode &&
+        !paySheetOpen &&
+        createPortal(
+          <div
+            className={`fixed inset-x-0 z-[70] border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.15)] dark:border-slate-700 dark:bg-slate-900 ${
+              useBottomNav
+                ? "bottom-[var(--bottom-nav-total)]"
+                : "bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+            }`}
+          >
+            <div className="mx-auto flex max-w-7xl items-end justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {translate("kasirPayTotal")}
+                </p>
+                <p className="mt-0.5 text-2xl font-bold tracking-tight text-emerald-700 dark:text-emerald-400">
+                  {formatRupiah(selectedTotal)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {translate("kasirPaySelectedCount").replace(
+                    "{count}",
+                    String(selectedLines.length),
+                  )}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2 pb-0.5">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (paySheetOpen) {
+                      onClosePaySheet();
+                    } else {
+                      onExitPayMode();
+                    }
+                  }}
+                  disabled={isPaying}
+                >
+                  {translate("cancel")}
+                </Button>
+                <Button
+                  onClick={paySheetOpen ? onConfirmPay : onOpenPaySheet}
+                  loading={isPaying}
+                  disabled={
+                    selectedLineIds.size === 0 ||
+                    (paySheetOpen && !canConfirmPay)
                   }
-                }}
-                disabled={isPaying}
-              >
-                {translate("cancel")}
-              </Button>
-              <Button
-                onClick={paySheetOpen ? onConfirmPay : onOpenPaySheet}
-                loading={isPaying}
-                disabled={
-                  selectedLineIds.size === 0 ||
-                  (paySheetOpen && !canConfirmPay)
-                }
-              >
-                {translate("kasirPay")}
-              </Button>
+                >
+                  {translate("kasirPay")}
+                </Button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
 
       <ConfirmModal
         open={!!deleteLineId}

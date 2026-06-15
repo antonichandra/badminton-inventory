@@ -26,6 +26,7 @@ const ACL_PERMISSIONS: ReadonlySet<string> = new Set([
   "master_plan",
   "business",
   "kasir",
+  "analytics",
 ]);
 
 export function toAclPermissions(acl: string[]): AclPermission[] {

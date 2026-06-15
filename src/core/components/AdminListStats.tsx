@@ -1,3 +1,5 @@
+import { Skeleton } from "./ui/Skeleton";
+
 interface StatItem {
   label: string;
   value: number;
@@ -12,7 +14,6 @@ interface StatSection {
 interface AdminListStatsProps {
   sections: StatSection[];
   isLoading?: boolean;
-  loadingLabel: string;
 }
 
 function StatBadge({
@@ -44,17 +45,29 @@ function StatBadge({
   );
 }
 
+function AdminListStatsSkeleton() {
+  return (
+    <div
+      className="mb-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+      aria-busy="true"
+      aria-label="Loading statistics"
+    >
+      <Skeleton className="mb-3 h-3 w-28" />
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Skeleton key={index} className="h-8 w-28 rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AdminListStats({
   sections,
   isLoading = false,
-  loadingLabel,
 }: AdminListStatsProps) {
   if (isLoading) {
-    return (
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <p className="text-sm text-slate-500">{loadingLabel}</p>
-      </div>
-    );
+    return <AdminListStatsSkeleton />;
   }
 
   if (sections.length === 0) {

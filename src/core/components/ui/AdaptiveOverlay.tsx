@@ -107,10 +107,52 @@ export function AdaptiveOverlay({
   const handleBackdropClick = closeOnBackdrop ? onClose : undefined;
 
   if (variant === "sheet") {
+    const isSheetEntering = open && !visible;
     const suppressCssAnimation =
       sheetDrag.isDragging ||
       sheetDrag.isAnimating ||
-      sheetDrag.dragOffset > 0;
+      sheetDrag.dragOffset > 0 ||
+      sheetDrag.dismissedByDrag;
+
+    const showSheetBackdropFadeIn = visible && !sheetDrag.dismissedByDrag;
+    const showSheetBackdropFadeOut =
+      !open && !visible && !sheetDrag.dismissedByDrag;
+
+    const sheetBackdropClass = cn(
+      "absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]",
+      showSheetBackdropFadeIn &&
+        "animate-[backdrop-fade-in_320ms_ease-out_forwards]",
+      showSheetBackdropFadeOut &&
+        "animate-[backdrop-fade-out_320ms_ease-in_forwards]",
+      (sheetDrag.isDragging ||
+        sheetDrag.isAnimating ||
+        sheetDrag.dismissedByDrag) &&
+        "animate-none!",
+    );
+
+    const sheetBackdropStyle = (() => {
+      if (sheetDrag.backdropOpacity !== undefined) {
+        return { opacity: sheetDrag.backdropOpacity };
+      }
+      if (isSheetEntering) {
+        return { opacity: 0 };
+      }
+      return undefined;
+    })();
+
+    const sheetPanelStyle = (() => {
+      if (sheetDrag.panelStyle) {
+        return sheetDrag.panelStyle;
+      }
+      if (isSheetEntering) {
+        return { transform: "translateY(100%)" };
+      }
+      return undefined;
+    })();
+
+    const showSheetPanelEnter = visible && !suppressCssAnimation;
+    const showSheetPanelExit =
+      !open && !visible && !suppressCssAnimation;
 
     return createPortal(
       <div
@@ -121,16 +163,8 @@ export function AdaptiveOverlay({
           type="button"
           aria-label="Close panel"
           data-overlay-backdrop
-          className={cn(
-            backdropClass,
-            (sheetDrag.isDragging || sheetDrag.isAnimating) &&
-              "animate-none!",
-          )}
-          style={
-            sheetDrag.backdropOpacity !== undefined
-              ? { opacity: sheetDrag.backdropOpacity }
-              : undefined
-          }
+          className={sheetBackdropClass}
+          style={sheetBackdropStyle}
           onClick={handleBackdropClick}
         />
 
@@ -141,15 +175,15 @@ export function AdaptiveOverlay({
           aria-labelledby={titleId}
           aria-describedby={description ? descriptionId : undefined}
           data-overlay-panel
-          style={sheetDrag.panelStyle}
+          style={sheetPanelStyle}
           className={cn(
             "relative z-10 flex max-h-[88svh] w-full max-w-lg flex-col rounded-t-[1.25rem] border border-slate-200/80 bg-white shadow-[0_-8px_40px_-12px_rgba(15,23,42,0.25)] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-[0_-8px_40px_-12px_rgba(0,0,0,0.5)]",
             sheetDrag.isDragging && "sheet-dragging",
             sheetDrag.isAnimating && "sheet-snap-back",
-            !suppressCssAnimation &&
-              (visible
-                ? "animate-[bottom-sheet-enter_320ms_cubic-bezier(0.32,0.72,0,1)_forwards]"
-                : "animate-[bottom-sheet-exit_280ms_cubic-bezier(0.32,0.72,0,1)_forwards]"),
+            showSheetPanelEnter &&
+              "animate-[bottom-sheet-enter_320ms_cubic-bezier(0.32,0.72,0,1)_forwards]",
+            showSheetPanelExit &&
+              "animate-[bottom-sheet-exit_280ms_cubic-bezier(0.32,0.72,0,1)_forwards]",
           )}
         >
           <div
@@ -227,14 +261,14 @@ export function AdaptiveOverlay({
         aria-describedby={description ? descriptionId : undefined}
         data-overlay-panel
         className={cn(
-          "relative z-10 w-full rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900",
+          "relative z-10 flex max-h-[min(88svh,calc(100vh-2rem))] w-full flex-col rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900",
           sizeClasses[size],
           visible
             ? "animate-[modal-enter_320ms_cubic-bezier(0.32,0.72,0,1)_forwards]"
             : "animate-[modal-exit_280ms_cubic-bezier(0.32,0.72,0,1)_forwards]",
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <div className="min-w-0">
             <h2
               id={titleId}
@@ -263,10 +297,14 @@ export function AdaptiveOverlay({
           )}
         </div>
 
-        {children && <div className="px-5 py-4">{children}</div>}
+        {children && (
+          <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+            {children}
+          </div>
+        )}
 
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
             {footer}
           </div>
         )}

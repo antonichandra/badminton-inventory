@@ -1,4 +1,5 @@
-import type { MenuItem } from "../../types/auth";
+import type { AclPermission, MenuItem } from "../../types/auth";
+import { hasPermission } from "./menu";
 
 export const DASHBOARD_NAV: MenuItem = {
   id: "dashboard",
@@ -10,12 +11,20 @@ export const ANALYTICS_NAV: MenuItem = {
   id: "analytics",
   labelKey: "menuAnalytics",
   path: "/analytics",
+  permission: "analytics",
 };
 
 const PRIMARY_MENU_IDS = ["kasir", "business"] as const;
 
-export function buildPrimaryNavItems(filteredMenu: MenuItem[]): MenuItem[] {
-  const items: MenuItem[] = [DASHBOARD_NAV, ANALYTICS_NAV];
+export function buildPrimaryNavItems(
+  filteredMenu: MenuItem[],
+  acl: AclPermission[],
+): MenuItem[] {
+  const items: MenuItem[] = [DASHBOARD_NAV];
+
+  if (hasPermission(acl, "analytics")) {
+    items.push(ANALYTICS_NAV);
+  }
 
   for (const id of PRIMARY_MENU_IDS) {
     const item = filteredMenu.find((entry) => entry.id === id && entry.path);

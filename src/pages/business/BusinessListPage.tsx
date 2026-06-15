@@ -344,7 +344,6 @@ export function BusinessListPage() {
         <AdminListStats
           sections={businessStatsSections}
           isLoading={businessStats === undefined}
-          loadingLabel={translate("loading")}
         />
       )}
 
@@ -385,7 +384,6 @@ export function BusinessListPage() {
         data={businesses ?? []}
         getRowKey={(row) => row._id}
         isLoading={businesses === undefined}
-        loadingMessage={translate("loading")}
         emptyMessage={translate("businessEmpty")}
       />
 
