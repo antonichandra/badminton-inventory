@@ -1,6 +1,7 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { getRoleById } from "./lib/authHelpers";
+import { getRoleById, getUserBySessionToken } from "./lib/authHelpers";
+import { resetAllInventoryData } from "./lib/inventoryResetHelpers";
 import { deleteStaffUserRecords } from "./lib/staffUserCleanup";
 import { forceDeleteShift } from "./lib/shiftReportHelpers";
 
@@ -174,5 +175,29 @@ export const resetBusinessShiftData = mutation({
     }
 
     return summary;
+  },
+});
+
+/** Super admin only: wipes all inventory, shift, and sales data. Keeps users and businesses. */
+export const resetInventoryData = mutation({
+  args: {
+    sessionToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const sessionData = await getUserBySessionToken(ctx, args.sessionToken);
+    if (!sessionData) {
+      throw new Error("UNAUTHORIZED");
+    }
+
+    const callerRole = await getRoleById(ctx, sessionData.user.roleId);
+    if (!callerRole || callerRole.name !== "SUPER_ADMIN") {
+      throw new Error("FORBIDDEN");
+    }
+
+    if (sessionData.user.status !== "APPROVED") {
+      throw new Error("FORBIDDEN");
+    }
+
+    return await resetAllInventoryData(ctx);
   },
 });
