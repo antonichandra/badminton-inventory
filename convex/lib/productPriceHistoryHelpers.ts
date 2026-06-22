@@ -57,3 +57,27 @@ export function resolvePriceKind(
   if (productType === "RENTAL") return "RENTAL";
   return "RETAIL";
 }
+
+/** Retail sell price effective at a point in time (falls back to current product price). */
+export async function resolveRetailSellPriceAt(
+  ctx: QueryCtx | MutationCtx,
+  productId: Id<"products">,
+  businessId: Id<"businesses">,
+  timestamp: number,
+): Promise<number> {
+  const history = await ctx.db
+    .query("sellPriceHistory")
+    .withIndex("by_productId", (q) => q.eq("productId", productId))
+    .collect();
+
+  const match = history
+    .filter((entry) => entry.businessId === businessId)
+    .filter((entry) => resolvePriceKind(entry) === "RETAIL")
+    .filter((entry) => entry.effectiveAt <= timestamp)
+    .sort((a, b) => b.effectiveAt - a.effectiveAt)[0];
+
+  if (match) return match.price;
+
+  const product = await ctx.db.get(productId);
+  return product?.sellPrice ?? 0;
+}

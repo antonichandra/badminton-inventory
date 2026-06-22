@@ -11,8 +11,8 @@ interface ExportLine {
 
 interface ExportSummary {
   totalRevenue: number;
-  totalCogs: number;
-  grossProfit: number;
+  totalCogs?: number;
+  grossProfit?: number;
   closedAt: number;
 }
 
@@ -20,6 +20,7 @@ export function exportShiftToCsv(
   shiftId: string,
   summary: ExportSummary | null,
   lines: ExportLine[],
+  includeProfit = true,
 ) {
   const rows: string[][] = [
     ["Shift ID", shiftId],
@@ -30,23 +31,54 @@ export function exportShiftToCsv(
         : new Date().toISOString(),
     ],
     ["Total Revenue", String(summary?.totalRevenue ?? 0)],
-    ["Total COGS", String(summary?.totalCogs ?? 0)],
-    ["Gross Profit", String(summary?.grossProfit ?? 0)],
-    [],
-    ["Product", "Qty", "Unit Price", "Total", "Status", "Method", "COGS", "Paid At"],
   ];
 
+  if (includeProfit) {
+    rows.push(
+      ["Total COGS", String(summary?.totalCogs ?? 0)],
+      ["Gross Profit", String(summary?.grossProfit ?? 0)],
+    );
+  }
+
+  rows.push(
+    [],
+    includeProfit
+      ? [
+          "Product",
+          "Qty",
+          "Unit Price",
+          "Total",
+          "Status",
+          "Method",
+          "COGS",
+          "Paid At",
+        ]
+      : ["Product", "Qty", "Unit Price", "Total", "Status", "Method", "Paid At"],
+  );
+
   for (const line of lines) {
-    rows.push([
-      line.productName,
-      String(line.qty),
-      String(line.unitPrice),
-      String(line.lineTotal),
-      line.paymentStatus,
-      line.paymentMethod ?? "",
-      String(line.cogsTotal ?? ""),
-      line.paidAt ? new Date(line.paidAt).toISOString() : "",
-    ]);
+    rows.push(
+      includeProfit
+        ? [
+            line.productName,
+            String(line.qty),
+            String(line.unitPrice),
+            String(line.lineTotal),
+            line.paymentStatus,
+            line.paymentMethod ?? "",
+            String(line.cogsTotal ?? ""),
+            line.paidAt ? new Date(line.paidAt).toISOString() : "",
+          ]
+        : [
+            line.productName,
+            String(line.qty),
+            String(line.unitPrice),
+            String(line.lineTotal),
+            line.paymentStatus,
+            line.paymentMethod ?? "",
+            line.paidAt ? new Date(line.paidAt).toISOString() : "",
+          ],
+    );
   }
 
   const csv = rows

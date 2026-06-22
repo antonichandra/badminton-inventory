@@ -133,22 +133,28 @@ export function ShiftSummaryView({
 
   const closedAt = shift.closedAt ?? summary?.closedAt;
   const openingCash = shift.openingCash;
-  const totalSales =
-    summary?.totalSales ?? cashSummary.totalSales ?? data.totalRevenue;
+  const expenseTotal = summary?.expenses ?? cashSummary.expenses;
+  const depositTotal = summary?.deposits ?? cashSummary.deposits;
+  const cashIncome = summary?.cashIncome ?? cashSummary.cashIncome ?? 0;
   const verifiedQris = summary?.verifiedQris ?? cashSummary.verifiedQris;
+  const reportedCash = summary?.reportedCash ?? cashSummary.reportedCash;
+  const physicalSales =
+    data.totalRevenue ?? summary?.totalRevenue ?? summary?.totalSales ?? 0;
+  const expectedCashInDrawer =
+    openingCash +
+    physicalSales +
+    cashIncome -
+    verifiedQris -
+    expenseTotal -
+    depositTotal;
+  const totalSales = physicalSales;
+  const cashVariance = reportedCash - expectedCashInDrawer;
   const recordedQrisSales =
     summary?.recordedQrisSales ??
     summary?.qrisSales ??
     cashSummary.recordedQrisSales ??
     cashSummary.qrisSales ??
     0;
-  const reportedCash = summary?.reportedCash ?? cashSummary.reportedCash;
-  const expectedCashInDrawer =
-    summary?.expectedCashInDrawer ?? cashSummary.expectedCashInDrawer;
-  const cashVariance = summary?.cashVariance ?? cashSummary.cashVariance;
-  const expenseTotal = summary?.expenses ?? cashSummary.expenses;
-  const depositTotal = summary?.deposits ?? cashSummary.deposits;
-  const cashIncome = summary?.cashIncome ?? cashSummary.cashIncome ?? 0;
   const recordedRevenue = summary?.recordedRevenue;
   const impliedRevenue = summary?.impliedRevenue;
 
@@ -165,8 +171,15 @@ export function ShiftSummaryView({
             {translate("kasirSummary")}
           </h2>
           <div className="flex shrink-0 gap-2">
-            <ExportShiftButton sessionToken={sessionToken} shiftId={shiftId} />
-            <ExportShiftPdfButton sessionToken={sessionToken} shiftId={shiftId} />
+            {showGrossProfit && (
+              <>
+                <ExportShiftButton sessionToken={sessionToken} shiftId={shiftId} />
+                <ExportShiftPdfButton
+                  sessionToken={sessionToken}
+                  shiftId={shiftId}
+                />
+              </>
+            )}
           </div>
         </div>
 

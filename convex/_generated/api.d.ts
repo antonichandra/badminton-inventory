@@ -28,6 +28,7 @@ import type * as lib_rbac from "../lib/rbac.js";
 import type * as lib_shiftCloseHelpers from "../lib/shiftCloseHelpers.js";
 import type * as lib_shiftDetailHelpers from "../lib/shiftDetailHelpers.js";
 import type * as lib_shiftHelpers from "../lib/shiftHelpers.js";
+import type * as lib_shiftPhysicalRevenueHelpers from "../lib/shiftPhysicalRevenueHelpers.js";
 import type * as lib_shiftReportHelpers from "../lib/shiftReportHelpers.js";
 import type * as lib_staffAssignmentHelpers from "../lib/staffAssignmentHelpers.js";
 import type * as lib_staffInvitationHelpers from "../lib/staffInvitationHelpers.js";
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   "lib/shiftCloseHelpers": typeof lib_shiftCloseHelpers;
   "lib/shiftDetailHelpers": typeof lib_shiftDetailHelpers;
   "lib/shiftHelpers": typeof lib_shiftHelpers;
+  "lib/shiftPhysicalRevenueHelpers": typeof lib_shiftPhysicalRevenueHelpers;
   "lib/shiftReportHelpers": typeof lib_shiftReportHelpers;
   "lib/staffAssignmentHelpers": typeof lib_staffAssignmentHelpers;
   "lib/staffInvitationHelpers": typeof lib_staffInvitationHelpers;

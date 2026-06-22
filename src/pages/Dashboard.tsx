@@ -188,7 +188,9 @@ export function DashboardPage() {
         >
           <MetricCard
             label={translate("dashboardTodayRevenue")}
-            value={formatRupiah(liveStats?.paidRevenue ?? 0)}
+            value={formatRupiah(
+              liveStats?.totalRevenue ?? liveStats?.paidRevenue ?? 0,
+            )}
             icon={Banknote}
             iconClassName="bg-emerald-500 text-white"
             loading={loadingKpis}
@@ -404,7 +406,7 @@ export function DashboardPage() {
                   </span>
                   <span className="font-semibold tabular-nums text-slate-900 dark:text-white">
                     {formatRupiah(summary.totalRevenue)}
-                    {isAdmin && (
+                    {isAdmin && "grossProfit" in summary && (
                       <>
                         {" · "}
                         <span className="font-normal text-emerald-600 dark:text-emerald-400">

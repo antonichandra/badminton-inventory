@@ -7,8 +7,8 @@ import { formatRupiah } from "./utils";
 interface ShiftExportSummary {
   closedAt: number;
   totalRevenue: number;
-  totalCogs: number;
-  grossProfit: number;
+  totalCogs?: number;
+  grossProfit?: number;
   cashSales?: number;
   qrisSales?: number;
   verifiedQris?: number;
@@ -46,6 +46,7 @@ export interface ShiftSummaryPdfData {
   summary: ShiftExportSummary | null;
   lines: ShiftExportLine[];
   language: AppLanguage;
+  includeProfit?: boolean;
 }
 
 const MARGIN = 14;
@@ -95,6 +96,7 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
   y += 2;
 
   const summary = data.summary;
+  const includeProfit = data.includeProfit !== false;
   const summaryRows: string[][] = [
     [
       data.language === "ID" ? "Kas awal" : "Opening cash",
@@ -104,15 +106,20 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
       data.language === "ID" ? "Pendapatan" : "Revenue",
       pdfAmount(summary?.totalRevenue ?? 0),
     ],
-    [
-      data.language === "ID" ? "HPP" : "COGS",
-      pdfAmount(summary?.totalCogs ?? 0),
-    ],
-    [
-      data.language === "ID" ? "Untung kotor" : "Gross profit",
-      pdfAmount(summary?.grossProfit ?? 0),
-    ],
   ];
+
+  if (includeProfit) {
+    summaryRows.push(
+      [
+        data.language === "ID" ? "HPP" : "COGS",
+        pdfAmount(summary?.totalCogs ?? 0),
+      ],
+      [
+        data.language === "ID" ? "Untung kotor" : "Gross profit",
+        pdfAmount(summary?.grossProfit ?? 0),
+      ],
+    );
+  }
 
   if (summary?.cashSales !== undefined) {
     summaryRows.push([
