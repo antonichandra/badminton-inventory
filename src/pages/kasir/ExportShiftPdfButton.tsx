@@ -41,6 +41,7 @@ export function ExportShiftPdfButton({
         summary: data.summary,
         lines: data.lines,
         language,
+        includeProfit: data.includeProfit,
       });
 
       downloadShiftSummaryPdf(blob, `shift-${shiftId.slice(-8)}.pdf`);

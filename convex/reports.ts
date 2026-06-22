@@ -1,14 +1,15 @@
-import { query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import {
   assertBusinessAccess,
   resolveScopedBusinessId,
 } from "./lib/businessContext";
-import { getAuthenticatedUser, hasAcl } from "./lib/rbac";
+import { getAuthenticatedUser, hasAcl, isAdmin, isSuperAdmin } from "./lib/rbac";
 import { getActiveUnitCostForProduct } from "./lib/inventoryCostHelpers";
 import {
-  aggregateDailyRollupsFromSaleLines,
-  aggregateTopSellingProductsFromSaleLines,
+  aggregateDailyRollupsFromShiftSummaries,
+  aggregateMonthlyRevenueFromShiftSummaries,
+  aggregateTopSellingProductsFromShiftSummaries,
   aggregateTopSpendingGroupsFromSaleLines,
   rollingSaleDateRange,
   type SaleDateRange,
@@ -17,7 +18,7 @@ import {
   findShiftAtTimestamp,
   resolvePriceKind,
 } from "./lib/productPriceHistoryHelpers";
-import { formatDateKey, getOpenShiftForBusiness } from "./lib/shiftHelpers";
+import { getOpenShiftForBusiness } from "./lib/shiftHelpers";
 
 function resolveSaleDateRange(args: {
   days?: number;
@@ -53,7 +54,7 @@ export const getDailyRollups = query({
     await assertBusinessAccess(ctx, user, role, businessId);
 
     const range = resolveSaleDateRange(args);
-    return aggregateDailyRollupsFromSaleLines(ctx, businessId, range);
+    return aggregateDailyRollupsFromShiftSummaries(ctx, businessId, range);
   },
 });
 
@@ -81,7 +82,7 @@ export const getTopSellingProducts = query({
     await assertBusinessAccess(ctx, user, role, businessId);
 
     const range = resolveSaleDateRange(args);
-    return aggregateTopSellingProductsFromSaleLines(
+    return aggregateTopSellingProductsFromShiftSummaries(
       ctx,
       businessId,
       range,
@@ -146,30 +147,17 @@ export const getMonthlyComparison = query({
 
     await assertBusinessAccess(ctx, user, role, businessId);
 
-    const lines = await ctx.db
-      .query("saleLines")
-      .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
-      .collect();
-
     const now = new Date();
     const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthKey = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`;
 
-    let thisMonth = 0;
-    let lastMonthTotal = 0;
-
-    for (const line of lines) {
-      if (line.paymentStatus !== "PAID") continue;
-      const dateKey = formatDateKey(line.paidAt ?? line.createdAt);
-      if (dateKey.startsWith(thisMonthKey)) {
-        thisMonth += line.lineTotal;
-      } else if (dateKey.startsWith(lastMonthKey)) {
-        lastMonthTotal += line.lineTotal;
-      }
-    }
-
-    return { thisMonth, lastMonth: lastMonthTotal };
+    return aggregateMonthlyRevenueFromShiftSummaries(
+      ctx,
+      businessId,
+      thisMonthKey,
+      lastMonthKey,
+    );
   },
 });
 
@@ -196,6 +184,7 @@ export const getExpiringBatches = query({
 
     await assertBusinessAccess(ctx, user, role, businessId);
 
+    const showCost = isAdmin(role) || isSuperAdmin(role);
     const cutoff =
       args.withinDays != null
         ? Date.now() + args.withinDays * 24 * 60 * 60 * 1000
@@ -217,7 +206,7 @@ export const getExpiringBatches = query({
         productName: product?.name ?? "—",
         qtyRemaining: batch.qtyRemaining,
         expiresAt: batch.expiresAt,
-        unitCost: batch.unitCost,
+        ...(showCost ? { unitCost: batch.unitCost } : {}),
       });
     }
 
@@ -400,6 +389,8 @@ export const getProductPriceHistory = query({
 /** @deprecated Use getProductPriceHistory */
 export const getSellPriceHistory = getProductPriceHistory;
 
+export const LOW_STOCK_THRESHOLD = 5;
+
 export const getInventoryStock = query({
   args: {
     sessionToken: v.string(),
@@ -477,6 +468,8 @@ export const getInventoryStock = query({
       }
     }
 
+    const showCost = isAdmin(role) || isSuperAdmin(role);
+
     const results = [];
     for (const product of retailProducts) {
       const productBatches = (batchesByProduct.get(product._id) ?? []).sort(
@@ -489,7 +482,7 @@ export const getInventoryStock = query({
           batchId: batch._id,
           qty: batch.qty,
           qtyRemaining: batch.qtyRemaining,
-          unitCost: batch.unitCost,
+          ...(showCost ? { unitCost: batch.unitCost } : {}),
           expiresAt: batch.expiresAt,
           receivedAt: batch.createdAt,
           supplierName: await supplierName(batch.supplierId),
@@ -500,6 +493,14 @@ export const getInventoryStock = query({
       const reservedQty = reservedByProduct.get(product._id) ?? 0;
       const qtyEstimated = Math.max(0, qtyOnHand - reservedQty);
 
+      const nearestExpiresAt = batches
+        .filter((batch) => batch.expiresAt != null)
+        .map((batch) => batch.expiresAt!)
+        .sort((a, b) => a - b)[0];
+
+      const stockAlert =
+        qtyEstimated <= 0 ? ("empty" as const) : qtyEstimated <= LOW_STOCK_THRESHOLD ? ("low" as const) : ("ok" as const);
+
       results.push({
         productId: product._id,
         productName: product.name,
@@ -509,6 +510,8 @@ export const getInventoryStock = query({
         qtyOnHand,
         reservedQty,
         qtyEstimated,
+        nearestExpiresAt,
+        stockAlert,
         batches,
       });
     }
@@ -549,5 +552,49 @@ export const getSupplierCostHistory = query({
     }
 
     return enriched;
+  },
+});
+
+export const updateStockBatchExpiry = mutation({
+  args: {
+    sessionToken: v.string(),
+    batchId: v.id("stockReceiptItems"),
+    expiresAt: v.optional(v.union(v.number(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!hasAcl(role, "kasir") && !hasAcl(role, "master_produk")) {
+      throw new Error("FORBIDDEN");
+    }
+
+    const batch = await ctx.db.get(args.batchId);
+    if (!batch) {
+      throw new Error("BATCH_NOT_FOUND");
+    }
+
+    await assertBusinessAccess(ctx, user, role, batch.businessId);
+
+    const product = await ctx.db.get(batch.productId);
+    if (!product || product.businessId !== batch.businessId) {
+      throw new Error("PRODUCT_NOT_FOUND");
+    }
+
+    if (
+      args.expiresAt !== undefined &&
+      args.expiresAt !== null &&
+      args.expiresAt <= 0
+    ) {
+      throw new Error("INVALID_EXPIRY");
+    }
+
+    if (product.trackExpiry && args.expiresAt === null) {
+      throw new Error("EXPIRY_REQUIRED");
+    }
+
+    await ctx.db.patch(args.batchId, {
+      expiresAt: args.expiresAt === null ? undefined : args.expiresAt,
+    });
+
+    return { batchId: args.batchId };
   },
 });

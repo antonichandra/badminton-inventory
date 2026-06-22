@@ -219,7 +219,7 @@ export function ShiftReportPanel({
                 </p>
                 <p className="text-xs text-slate-500">
                   {formatRupiah(summary.totalRevenue)}
-                  {showGrossProfit && (
+                  {showGrossProfit && "grossProfit" in summary && (
                     <>
                       {" "}
                       · {translate("kasirGrossProfit")}{" "}

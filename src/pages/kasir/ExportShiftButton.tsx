@@ -26,7 +26,7 @@ export function ExportShiftButton({
         sessionToken,
         shiftId,
       });
-      exportShiftToCsv(shiftId, data.summary, data.lines);
+      exportShiftToCsv(shiftId, data.summary, data.lines, data.includeProfit);
     } finally {
       setLoading(false);
     }

@@ -2,6 +2,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getRoleById } from "./authHelpers";
 import { getFallbackUnitCost } from "./inventoryCostHelpers";
+import { resolveRetailSellPriceAt } from "./productPriceHistoryHelpers";
 
 export function calculateLineTotal(
   product: Doc<"products">,
@@ -246,14 +247,24 @@ export async function computeImpliedRevenue(
   ctx: QueryCtx | MutationCtx,
   shiftId: Id<"shifts">,
 ) {
+  const shift = await ctx.db.get(shiftId);
+  if (!shift) return 0;
+
   const recon = await getShiftStockReconciliation(ctx, shiftId);
   let impliedRevenue = 0;
+  const asOf = Date.now();
 
   for (const row of recon) {
     if (row.missInputQty <= 0) continue;
     const product = await ctx.db.get(row.productId);
     if (!product || product.type !== "RETAIL") continue;
-    impliedRevenue += row.missInputQty * product.sellPrice;
+    const unitPrice = await resolveRetailSellPriceAt(
+      ctx,
+      row.productId,
+      shift.businessId,
+      asOf,
+    );
+    impliedRevenue += row.missInputQty * unitPrice;
   }
 
   return impliedRevenue;

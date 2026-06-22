@@ -26,9 +26,14 @@ import {
   isSuperAdmin,
 } from "./lib/rbac";
 import {
+  buildPhysicalSalesByPriceTier,
   computeClosePreview,
+  computePhysicalTotalRevenue,
+  estimatePhysicalCogsForShift,
   finalizeShiftClose,
   getSuggestedOpeningStock as loadSuggestedOpeningStock,
+  hasShiftClosingStockCount,
+  shouldRebuildClosedPhysicalTiers,
 } from "./lib/shiftCloseHelpers";
 import {
   loadShiftCashEntries,
@@ -325,27 +330,85 @@ export const getShiftLiveStats = query({
   handler: async (ctx, args) => {
     const context = await tryOpenShiftContext(ctx, args.sessionToken);
     if (!context) return null;
-    const salesStats = await getShiftSalesStats(ctx, context.shift._id);
-    const cashSummary = await getShiftCashSummary(ctx, context.shift);
-    const impliedRevenue = await computeImpliedRevenue(
+    const { shift, businessId, role } = context;
+    const salesStats = await getShiftSalesStats(ctx, shift._id);
+    const cashSummary = await getShiftCashSummary(ctx, shift);
+    const stockReconciliation = await getShiftStockReconciliation(
       ctx,
-      context.shift._id,
+      shift._id,
     );
+    const usePhysical = await hasShiftClosingStockCount(ctx, shift._id);
+    const liveAsOf = Date.now();
     const recordedRevenue = salesStats.paidRevenue;
-    const totalRevenue = recordedRevenue + impliedRevenue;
+    const impliedRevenue = usePhysical
+      ? Math.max(
+          0,
+          (await computePhysicalTotalRevenue(
+            ctx,
+            shift._id,
+            businessId,
+            stockReconciliation,
+            liveAsOf,
+          )) - recordedRevenue,
+        )
+      : await computeImpliedRevenue(ctx, shift._id);
+    const totalRevenue = usePhysical
+      ? await computePhysicalTotalRevenue(
+          ctx,
+          shift._id,
+          businessId,
+          stockReconciliation,
+          liveAsOf,
+        )
+      : recordedRevenue + impliedRevenue;
     const showProfitDetail =
-      isAdmin(context.role) || isSuperAdmin(context.role);
+      isAdmin(role) || isSuperAdmin(role);
 
-    const cashEntries = await loadShiftCashEntries(ctx, context.shift._id);
-    const writeOffs = await loadShiftWriteOffs(ctx, context.shift._id);
+    const cashEntries = await loadShiftCashEntries(ctx, shift._id);
+    const writeOffs = await loadShiftWriteOffs(ctx, shift._id);
 
-    const topProducts = showProfitDetail
-      ? salesStats.topProducts
-      : salesStats.topProducts.map(({ cogs, grossProfit, unitCost, ...rest }) => rest);
+    const salesByPriceTier = usePhysical
+      ? await buildPhysicalSalesByPriceTier(
+          ctx,
+          shift._id,
+          businessId,
+          stockReconciliation,
+          showProfitDetail,
+          liveAsOf,
+        )
+      : salesStats.salesByPriceTier;
 
-    const salesByPriceTier = showProfitDetail
-      ? salesStats.salesByPriceTier
-      : salesStats.salesByPriceTier.map(({ cogs, grossProfit, unitCost, ...rest }) => rest);
+    const topProducts = usePhysical
+      ? salesByPriceTier
+          .map((tier) => ({
+            productId: tier.productId,
+            productName: tier.productName,
+            qty: tier.qty,
+            revenue: tier.revenue,
+            ...(showProfitDetail
+              ? {
+                  cogs: tier.cogs,
+                  unitCost: tier.unitCost,
+                  grossProfit: tier.grossProfit,
+                }
+              : {}),
+          }))
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 10)
+      : showProfitDetail
+        ? salesStats.topProducts
+        : salesStats.topProducts.map(
+            ({ cogs, grossProfit, unitCost, ...rest }) => rest,
+          );
+
+    const physicalCogs = usePhysical
+      ? await estimatePhysicalCogsForShift(
+          ctx,
+          businessId,
+          shift._id,
+          stockReconciliation,
+        )
+      : undefined;
 
     return {
       paidRevenue: recordedRevenue,
@@ -358,11 +421,17 @@ export const getShiftLiveStats = query({
       cashEntries,
       writeOffs,
       topProducts,
-      salesByPriceTier,
+      salesByPriceTier: showProfitDetail
+        ? salesByPriceTier
+        : salesByPriceTier.map(({ cogs, grossProfit, unitCost, ...rest }) => rest),
       ...(showProfitDetail
         ? {
-            grossProfit: salesStats.estimatedGrossProfit,
-            totalCogs: salesStats.estimatedTotalCogs,
+            grossProfit: usePhysical
+              ? totalRevenue - (physicalCogs ?? 0)
+              : salesStats.estimatedGrossProfit,
+            totalCogs: usePhysical
+              ? physicalCogs
+              : salesStats.estimatedTotalCogs,
           }
         : {}),
     };
@@ -395,17 +464,20 @@ export const getShiftSummary = query({
 
     if (saved) {
       const cashSummary = await getShiftCashSummary(ctx, shift);
+      const showProfitDetail = isAdmin(role) || isSuperAdmin(role);
       return {
         shift,
         summary: saved,
         cashSummary,
         totalRevenue: saved.totalRevenue,
+        ...(showProfitDetail ? { grossProfit: saved.grossProfit } : {}),
       };
     }
 
     const salesStats = await getShiftSalesStats(ctx, shift._id);
     const stockSummary = await getShiftStockSummary(ctx, shift._id);
     const cashSummary = await getShiftCashSummary(ctx, shift);
+    const showProfitDetail = isAdmin(role) || isSuperAdmin(role);
 
     return {
       shift,
@@ -413,7 +485,7 @@ export const getShiftSummary = query({
       salesByPriceTier: salesStats.salesByPriceTier,
       cashSummary,
       totalRevenue: salesStats.paidRevenue,
-      grossProfit: salesStats.grossProfit,
+      ...(showProfitDetail ? { grossProfit: salesStats.grossProfit } : {}),
     };
   },
 });
@@ -465,11 +537,66 @@ export const getShiftDetail = query({
       grossProfit = salesStats.grossProfit;
     }
 
-    const salesStats = await getShiftSalesStats(ctx, shift._id);
     const showProfitDetail = isAdmin(role) || isSuperAdmin(role);
-    const salesByPriceTier = showProfitDetail
-      ? salesStats.salesByPriceTier
-      : salesStats.salesByPriceTier.map(({ cogs, grossProfit, ...rest }) => rest);
+    const salesStats = await getShiftSalesStats(ctx, shift._id);
+
+    let salesByPriceTier;
+    if (saved && shift.status === "CLOSED") {
+      const closedAsOf = shift.closedAt ?? saved.closedAt;
+      const needsPhysicalRebuild = shouldRebuildClosedPhysicalTiers(
+        saved.salesByPriceTier,
+        stockReconciliation,
+      );
+
+      if (!needsPhysicalRebuild && saved.salesByPriceTier.length > 0) {
+        salesByPriceTier = showProfitDetail
+          ? saved.salesByPriceTier
+          : saved.salesByPriceTier.map(
+              ({ cogs, grossProfit, ...rest }) => rest,
+            );
+      } else if (stockReconciliation.length > 0) {
+        const physicalTiers = await buildPhysicalSalesByPriceTier(
+          ctx,
+          shift._id,
+          activeBusinessId,
+          stockReconciliation,
+          showProfitDetail,
+          closedAsOf,
+        );
+        salesByPriceTier = showProfitDetail
+          ? physicalTiers
+          : physicalTiers.map(({ cogs, grossProfit, unitCost, ...rest }) => rest);
+      } else {
+        salesByPriceTier = showProfitDetail
+          ? salesStats.salesByPriceTier
+          : salesStats.salesByPriceTier.map(
+              ({ cogs, grossProfit, ...rest }) => rest,
+            );
+      }
+    } else {
+      const usePhysical =
+        saved != null && stockReconciliation.length > 0;
+      const physicalTiers = usePhysical
+        ? await buildPhysicalSalesByPriceTier(
+            ctx,
+            shift._id,
+            activeBusinessId,
+            stockReconciliation,
+            showProfitDetail,
+            Date.now(),
+          )
+        : null;
+
+      salesByPriceTier = physicalTiers
+        ? showProfitDetail
+          ? physicalTiers
+          : physicalTiers.map(({ cogs, grossProfit, unitCost, ...rest }) => rest)
+        : showProfitDetail
+          ? salesStats.salesByPriceTier
+          : salesStats.salesByPriceTier.map(
+              ({ cogs, grossProfit, ...rest }) => rest,
+            );
+    }
 
     const displayGrossProfit = saved
       ? grossProfit
@@ -520,9 +647,30 @@ export const listShiftSummaries = query({
       .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
       .collect();
 
+    const showProfitDetail = isAdmin(role) || isSuperAdmin(role);
+
     return summaries
       .sort((a, b) => b.closedAt - a.closedAt)
-      .slice(0, args.limit ?? 20);
+      .slice(0, args.limit ?? 20)
+      .map((summary) => {
+        if (showProfitDetail) return summary;
+        const {
+          totalCogs: _totalCogs,
+          grossProfit: _grossProfit,
+          salesByPriceTier,
+          topProducts,
+          ...rest
+        } = summary;
+        return {
+          ...rest,
+          salesByPriceTier: salesByPriceTier.map(
+            ({ cogs, grossProfit, ...tier }) => tier,
+          ),
+          topProducts: topProducts.map(
+            ({ cogs, grossProfit, ...product }) => product,
+          ),
+        };
+      });
   },
 });
 
@@ -659,12 +807,41 @@ export const getShiftExportData = query({
     }
 
     const business = await ctx.db.get(activeBusinessId);
+    const showProfitDetail = isAdmin(role) || isSuperAdmin(role);
+
+    const redactedSummary = summary
+      ? showProfitDetail
+        ? summary
+        : (() => {
+            const {
+              totalCogs: _totalCogs,
+              grossProfit: _grossProfit,
+              salesByPriceTier,
+              topProducts,
+              ...rest
+            } = summary;
+            return {
+              ...rest,
+              salesByPriceTier: salesByPriceTier.map(
+                ({ cogs, grossProfit, ...tier }) => tier,
+              ),
+              topProducts: topProducts.map(
+                ({ cogs, grossProfit, ...product }) => product,
+              ),
+            };
+          })()
+      : null;
+
+    const redactedLines = showProfitDetail
+      ? enrichedLines
+      : enrichedLines.map(({ cogsTotal: _cogsTotal, ...line }) => line);
 
     return {
       shift,
-      summary,
-      lines: enrichedLines,
+      summary: redactedSummary,
+      lines: redactedLines,
       businessName: business?.name ?? "—",
+      includeProfit: showProfitDetail,
     };
   },
 });
@@ -873,11 +1050,20 @@ export const updateSaleLine = mutation({
       throw new Error("INVALID_QTY");
     }
 
-    const { unitPrice, lineTotal } = calculateLineTotal(
-      product,
-      qty,
-      rentalHours,
-    );
+    const productChanged =
+      args.productId != null && args.productId !== line.productId;
+
+    let unitPrice: number;
+    let lineTotal: number;
+    if (productChanged) {
+      ({ unitPrice, lineTotal } = calculateLineTotal(product, qty, rentalHours));
+    } else if (product.type === "RENTAL") {
+      unitPrice = line.unitPrice;
+      lineTotal = unitPrice * qty * (rentalHours ?? 0);
+    } else {
+      unitPrice = line.unitPrice;
+      lineTotal = unitPrice * qty;
+    }
 
     await ctx.db.patch(args.lineId, {
       productId,

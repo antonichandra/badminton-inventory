@@ -7,9 +7,17 @@ import {
   getShiftSalesStats,
   getShiftStockReconciliation,
 } from "./shiftHelpers";
-import { resolveSaleLineCogs } from "./inventoryCostHelpers";
+import { resolveSaleLineCogs, getFallbackUnitCost } from "./inventoryCostHelpers";
+import { buildPhysicalSalesByPriceTier, shouldRebuildClosedPhysicalTiers } from "./shiftPhysicalRevenueHelpers";
 
 export const SHIFT_RETENTION_LIMIT = 10;
+
+/** shiftSummaries nested validators reject unknown fields (e.g. unitCost). */
+export function sanitizeShiftSummarySalesStats<
+  T extends { unitCost?: number },
+>(entries: T[]) {
+  return entries.map(({ unitCost: _unitCost, ...rest }) => rest);
+}
 
 export interface SaleDateRange {
   startDateKey: string;
@@ -52,6 +60,188 @@ function isPaidLineInRange(
   if (line.paymentStatus !== "PAID") return false;
   const date = formatDateKey(line.paidAt ?? line.createdAt);
   return date >= range.startDateKey && date <= range.endDateKey;
+}
+
+function isShiftSummaryInRange(
+  closedAt: number,
+  range: SaleDateRange,
+): boolean {
+  const date = formatDateKey(closedAt);
+  return date >= range.startDateKey && date <= range.endDateKey;
+}
+
+/** Daily revenue/COGS from closed shifts (physical stock source of truth). */
+export async function aggregateDailyRollupsFromShiftSummaries(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+) {
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const byDate = new Map<string, { totalRevenue: number; totalCogs: number }>();
+
+  for (const summary of summaries) {
+    if (!isShiftSummaryInRange(summary.closedAt, range)) continue;
+
+    const date = formatDateKey(summary.closedAt);
+    const entry = byDate.get(date) ?? { totalRevenue: 0, totalCogs: 0 };
+    entry.totalRevenue += summary.totalRevenue;
+    entry.totalCogs += summary.totalCogs;
+    byDate.set(date, entry);
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, stats]) => ({
+      businessId,
+      date,
+      totalRevenue: stats.totalRevenue,
+      totalCogs: stats.totalCogs,
+      grossProfit: stats.totalRevenue - stats.totalCogs,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export async function aggregateMonthlyRevenueFromShiftSummaries(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  thisMonthKey: string,
+  lastMonthKey: string,
+) {
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  let thisMonth = 0;
+  let lastMonth = 0;
+
+  for (const summary of summaries) {
+    const dateKey = formatDateKey(summary.closedAt);
+    if (dateKey.startsWith(thisMonthKey)) {
+      thisMonth += summary.totalRevenue;
+    } else if (dateKey.startsWith(lastMonthKey)) {
+      lastMonth += summary.totalRevenue;
+    }
+  }
+
+  return { thisMonth, lastMonth };
+}
+
+/** Top products from physical stock reconciliation + paid rental lines per shift. */
+export async function aggregateTopSellingProductsFromShiftSummaries(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const productMap = new Map<
+    string,
+    {
+      productId: Id<"products">;
+      productName: string;
+      qty: number;
+      revenue: number;
+      cogs: number;
+    }
+  >();
+
+  for (const summary of summaries) {
+    if (!isShiftSummaryInRange(summary.closedAt, range)) continue;
+
+    if (
+      summary.salesByPriceTier.length > 0 &&
+      !shouldRebuildClosedPhysicalTiers(
+        summary.salesByPriceTier,
+        summary.stockReconciliation,
+      )
+    ) {
+      for (const tier of summary.salesByPriceTier) {
+        const key = tier.productId;
+        const entry = productMap.get(key) ?? {
+          productId: tier.productId,
+          productName: tier.productName,
+          qty: 0,
+          revenue: 0,
+          cogs: 0,
+        };
+        entry.qty += tier.qty;
+        entry.revenue += tier.revenue;
+        entry.cogs += tier.cogs ?? 0;
+        productMap.set(key, entry);
+      }
+      continue;
+    }
+
+    if (summary.stockReconciliation.length > 0) {
+      const tiers = await buildPhysicalSalesByPriceTier(
+        ctx,
+        summary.shiftId,
+        businessId,
+        summary.stockReconciliation,
+        true,
+        summary.closedAt,
+      );
+      for (const tier of tiers) {
+        const key = tier.productId;
+        const entry = productMap.get(key) ?? {
+          productId: tier.productId,
+          productName: tier.productName,
+          qty: 0,
+          revenue: 0,
+          cogs: 0,
+        };
+        entry.qty += tier.qty;
+        entry.revenue += tier.revenue;
+        entry.cogs += tier.cogs;
+        productMap.set(key, entry);
+      }
+      continue;
+    }
+
+    const lines = await ctx.db
+      .query("saleLines")
+      .withIndex("by_shiftId", (q) => q.eq("shiftId", summary.shiftId))
+      .collect();
+
+    for (const line of lines) {
+      if (line.paymentStatus !== "PAID") continue;
+      const product = await ctx.db.get(line.productId);
+      if (!product || product.type === "RETAIL") continue;
+
+      const key = line.productId;
+      const entry = productMap.get(key) ?? {
+        productId: line.productId,
+        productName: product.name,
+        qty: 0,
+        revenue: 0,
+        cogs: 0,
+      };
+      entry.qty += line.qty;
+      entry.revenue += line.lineTotal;
+      productMap.set(key, entry);
+    }
+  }
+
+  return Array.from(productMap.values())
+    .map((product) => ({
+      productId: product.productId,
+      productName: product.productName,
+      qty: product.qty,
+      unitPrice:
+        product.qty > 0 ? Math.round(product.revenue / product.qty) : 0,
+      revenue: product.revenue,
+      grossProfit: product.revenue - product.cogs,
+    }))
+    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+    .slice(0, limit);
 }
 
 export async function aggregateDailyRollupsFromSaleLines(
@@ -258,8 +448,10 @@ export async function buildAndSaveShiftSummary(
     expenses: cashSummary.expenses,
     deposits: cashSummary.deposits,
     variance: cashSummary.variance,
-    salesByPriceTier: salesStats.salesByPriceTier,
-    topProducts: salesStats.topProducts,
+    salesByPriceTier: sanitizeShiftSummarySalesStats(
+      salesStats.salesByPriceTier,
+    ),
+    topProducts: sanitizeShiftSummarySalesStats(salesStats.topProducts),
     stockReconciliation,
     createdAt: closedAt,
   };
