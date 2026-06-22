@@ -20,6 +20,7 @@ import {
   type SupplierStatusFilter,
 } from "./suppliers.config";
 import { SupplierFormModal } from "./SupplierFormModal";
+import { SupplierProductsModal } from "./SupplierProductsModal";
 import { SupplierReceiptsPanel } from "./SupplierReceiptsPanel";
 
 type SupplierTab = "list" | "receipts";
@@ -35,7 +36,11 @@ export function SupplierPage() {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<SupplierTab>("list");
   const [formOpen, setFormOpen] = useState(false);
+  const [productsModalOpen, setProductsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<SupplierRow | null>(
+    null,
+  );
+  const [productsSupplier, setProductsSupplier] = useState<SupplierRow | null>(
     null,
   );
 
@@ -85,6 +90,11 @@ export function SupplierPage() {
     setFormOpen(true);
   }, []);
 
+  const handleManageProducts = useCallback((row: SupplierRow) => {
+    setProductsSupplier(row);
+    setProductsModalOpen(true);
+  }, []);
+
   const columns = useMemo(
     () =>
       buildSupplierTableColumns(
@@ -92,14 +102,19 @@ export function SupplierPage() {
           name: translate("supplierColName"),
           description: translate("supplierColDescription"),
           contact: translate("supplierColContact"),
+          products: translate("supplierColProducts"),
+          productsAll: translate("supplierLinkedProductsAll"),
+          productsCount: translate("supplierLinkedProductsCount"),
           status: translate("supplierColStatus"),
           active: translate("supplierActive"),
           inactive: translate("supplierInactive"),
           edit: translate("supplierEdit"),
+          manageProducts: translate("supplierManageProducts"),
         },
         handleEdit,
+        handleManageProducts,
       ),
-    [handleEdit, translate],
+    [handleEdit, handleManageProducts, translate],
   );
 
   const handleAdd = () => {
@@ -113,6 +128,13 @@ export function SupplierPage() {
       message: editingSupplier
         ? translate("supplierUpdateSuccess")
         : translate("supplierCreateSuccess"),
+    });
+  };
+
+  const handleProductsSuccess = () => {
+    showToast({
+      type: "success",
+      message: translate("supplierProductsUpdateSuccess"),
     });
   };
 
@@ -185,13 +207,22 @@ export function SupplierPage() {
       )}
 
       {sessionToken && (
-        <SupplierFormModal
-          open={formOpen}
-          onClose={() => setFormOpen(false)}
-          sessionToken={sessionToken}
-          supplier={editingSupplier}
-          onSuccess={handleSuccess}
-        />
+        <>
+          <SupplierFormModal
+            open={formOpen}
+            onClose={() => setFormOpen(false)}
+            sessionToken={sessionToken}
+            supplier={editingSupplier}
+            onSuccess={handleSuccess}
+          />
+          <SupplierProductsModal
+            open={productsModalOpen}
+            onClose={() => setProductsModalOpen(false)}
+            sessionToken={sessionToken}
+            supplier={productsSupplier}
+            onSuccess={handleProductsSuccess}
+          />
+        </>
       )}
     </PermissionGuard>
   );

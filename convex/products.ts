@@ -8,6 +8,7 @@ import {
 import { assertAcl, getAuthenticatedUser, hasAcl } from "./lib/rbac";
 import { getActiveUnitCostForProduct } from "./lib/inventoryCostHelpers";
 import { recordProductPriceChange } from "./lib/productPriceHistoryHelpers";
+import { getLinkedProductIdsForSupplier } from "./lib/supplierProductHelpers";
 
 const productStatus = v.union(v.literal("ACTIVE"), v.literal("INACTIVE"));
 const productTypeFilter = v.union(v.literal("RETAIL"), v.literal("RENTAL"));
@@ -97,11 +98,12 @@ export const listProducts = query({
         let unitCost: number | null = null;
         let margin: number | null = null;
         if (product.type === "RETAIL") {
-          unitCost = await getActiveUnitCostForProduct(
-            ctx,
-            businessId,
-            product._id,
-          );
+          unitCost =
+            (await getActiveUnitCostForProduct(
+              ctx,
+              businessId,
+              product._id,
+            )) ?? product.defaultUnitCost ?? null;
           margin =
             unitCost !== null ? product.sellPrice - unitCost : null;
         }
@@ -190,10 +192,85 @@ export const listRetailProductsForShift = query({
 
       return products
         .filter((product) => product.isActive && product.type === "RETAIL")
+        .map((product) => ({
+          _id: product._id,
+          name: product.name,
+          unit: product.unit,
+          trackExpiry: product.trackExpiry ?? false,
+          defaultUnitCost: product.defaultUnitCost,
+          unitsPerPurchaseUnit: product.unitsPerPurchaseUnit,
+        }))
         .sort((a, b) => a.name.localeCompare(b.name));
     } catch (error) {
       console.error("listRetailProductsForShift failed:", error);
       return [];
+    }
+  },
+});
+
+export const listRetailProductsForSupplier = query({
+  args: {
+    sessionToken: v.string(),
+    supplierId: v.id("suppliers"),
+    businessId: v.optional(v.id("businesses")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+      if (!hasAcl(role, "kasir")) {
+        return { products: [], hasProductLinks: false };
+      }
+
+      const businessId = await resolveScopedBusinessId(
+        ctx,
+        user,
+        role,
+        args.businessId,
+      );
+      if (!businessId) {
+        return { products: [], hasProductLinks: false };
+      }
+
+      const supplier = await ctx.db.get(args.supplierId);
+      if (!supplier || supplier.businessId !== businessId || !supplier.isActive) {
+        return { products: [], hasProductLinks: false };
+      }
+
+      const products = await ctx.db
+        .query("products")
+        .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+        .collect();
+
+      const retailProducts = products
+        .filter((product) => product.isActive && product.type === "RETAIL")
+        .map((product) => ({
+          _id: product._id,
+          name: product.name,
+          unit: product.unit,
+          trackExpiry: product.trackExpiry ?? false,
+          defaultUnitCost: product.defaultUnitCost,
+          unitsPerPurchaseUnit: product.unitsPerPurchaseUnit,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const linkedProductIds = await getLinkedProductIdsForSupplier(
+        ctx,
+        businessId,
+        args.supplierId,
+      );
+
+      if (linkedProductIds === null) {
+        return { products: retailProducts, hasProductLinks: false };
+      }
+
+      const linkedSet = new Set(linkedProductIds);
+      return {
+        products: retailProducts.filter((product) => linkedSet.has(product._id)),
+        hasProductLinks: true,
+      };
+    } catch (error) {
+      console.error("listRetailProductsForSupplier failed:", error);
+      return { products: [], hasProductLinks: false };
     }
   },
 });
@@ -235,6 +312,25 @@ export const listActiveProductsForKasir = query({
   },
 });
 
+function validateRetailCostFields(
+  type: "RETAIL" | "RENTAL",
+  defaultUnitCost?: number,
+  unitsPerPurchaseUnit?: number,
+) {
+  if (type !== "RETAIL") {
+    return;
+  }
+  if (defaultUnitCost !== undefined && defaultUnitCost < 0) {
+    throw new Error("INVALID_UNIT_COST");
+  }
+  if (
+    unitsPerPurchaseUnit !== undefined &&
+    unitsPerPurchaseUnit < 1
+  ) {
+    throw new Error("INVALID_PACK_SIZE");
+  }
+}
+
 export const createProduct = mutation({
   args: {
     sessionToken: v.string(),
@@ -244,6 +340,8 @@ export const createProduct = mutation({
     rentalPricePerHour: v.optional(v.number()),
     unit: v.string(),
     trackExpiry: v.optional(v.boolean()),
+    defaultUnitCost: v.optional(v.number()),
+    unitsPerPurchaseUnit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { user, role, activeBusinessId } = await requireMasterBusinessContext(
@@ -257,6 +355,12 @@ export const createProduct = mutation({
     if (!name || !unit) {
       throw new Error("INVALID_INPUT");
     }
+
+    validateRetailCostFields(
+      args.type,
+      args.defaultUnitCost,
+      args.unitsPerPurchaseUnit,
+    );
 
     if (args.type === "RENTAL" && (args.rentalPricePerHour ?? 0) <= 0) {
       throw new Error("INVALID_RENTAL_PRICE");
@@ -277,6 +381,10 @@ export const createProduct = mutation({
         args.type === "RENTAL" ? args.rentalPricePerHour : undefined,
       unit,
       trackExpiry: args.type === "RETAIL" ? (args.trackExpiry ?? false) : false,
+      defaultUnitCost:
+        args.type === "RETAIL" ? args.defaultUnitCost : undefined,
+      unitsPerPurchaseUnit:
+        args.type === "RETAIL" ? args.unitsPerPurchaseUnit : undefined,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -321,6 +429,8 @@ export const updateProduct = mutation({
     rentalPricePerHour: v.optional(v.number()),
     unit: v.string(),
     trackExpiry: v.optional(v.boolean()),
+    defaultUnitCost: v.optional(v.number()),
+    unitsPerPurchaseUnit: v.optional(v.number()),
     isActive: v.boolean(),
   },
   handler: async (ctx, args) => {
@@ -341,6 +451,12 @@ export const updateProduct = mutation({
     if (!name || !unit) {
       throw new Error("INVALID_INPUT");
     }
+
+    validateRetailCostFields(
+      args.type,
+      args.defaultUnitCost,
+      args.unitsPerPurchaseUnit,
+    );
 
     const now = Date.now();
     const newSellPrice = args.type === "RETAIL" ? args.sellPrice : 0;
@@ -382,6 +498,10 @@ export const updateProduct = mutation({
       unit,
       trackExpiry:
         args.type === "RETAIL" ? (args.trackExpiry ?? false) : false,
+      defaultUnitCost:
+        args.type === "RETAIL" ? args.defaultUnitCost : undefined,
+      unitsPerPurchaseUnit:
+        args.type === "RETAIL" ? args.unitsPerPurchaseUnit : undefined,
       isActive: args.isActive,
       updatedAt: now,
     });

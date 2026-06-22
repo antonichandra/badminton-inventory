@@ -5,6 +5,10 @@ import {
   resolveScopedBusinessId,
 } from "./lib/businessContext";
 import { assertAcl, getAuthenticatedUser, hasAcl } from "./lib/rbac";
+import {
+  countLinkedProductsForSupplier,
+  syncSupplierProducts,
+} from "./lib/supplierProductHelpers";
 
 const supplierStatus = v.union(v.literal("ACTIVE"), v.literal("INACTIVE"));
 
@@ -41,7 +45,7 @@ export const listSuppliers = query({
       const searchTerm = args.search?.trim().toLowerCase() ?? "";
       const statusFilter = args.statuses ?? [];
 
-      return suppliers
+      const filtered = suppliers
         .filter((supplier) => {
           if (statusFilter.length > 0) {
             const status = supplier.isActive ? "ACTIVE" : "INACTIVE";
@@ -66,6 +70,17 @@ export const listSuppliers = query({
           return true;
         })
         .sort((a, b) => a.name.localeCompare(b.name));
+
+      const enriched = [];
+      for (const supplier of filtered) {
+        const linkedProductCount = await countLinkedProductsForSupplier(
+          ctx,
+          businessId,
+          supplier._id,
+        );
+        enriched.push({ ...supplier, linkedProductCount });
+      }
+      return enriched;
     } catch (error) {
       console.error("listSuppliers failed:", error);
       return [];
@@ -157,12 +172,56 @@ export const listSupplierOptions = query({
   },
 });
 
+export const getSupplierProducts = query({
+  args: {
+    sessionToken: v.string(),
+    supplierId: v.id("suppliers"),
+    businessId: v.optional(v.id("businesses")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+      if (!hasAcl(role, "master_produk")) {
+        return [];
+      }
+
+      const businessId = await resolveScopedBusinessId(
+        ctx,
+        user,
+        role,
+        args.businessId,
+      );
+      if (!businessId) {
+        return [];
+      }
+
+      const supplier = await ctx.db.get(args.supplierId);
+      if (!supplier || supplier.businessId !== businessId) {
+        return [];
+      }
+
+      const links = await ctx.db
+        .query("supplierProducts")
+        .withIndex("by_business_and_supplier", (q) =>
+          q.eq("businessId", businessId).eq("supplierId", args.supplierId),
+        )
+        .collect();
+
+      return links.map((link) => link.productId);
+    } catch (error) {
+      console.error("getSupplierProducts failed:", error);
+      return [];
+    }
+  },
+});
+
 export const createSupplier = mutation({
   args: {
     sessionToken: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
     contact: v.optional(v.string()),
+    productIds: v.optional(v.array(v.id("products"))),
   },
   handler: async (ctx, args) => {
     const { role, activeBusinessId } = await requireMasterBusinessContext(
@@ -187,6 +246,16 @@ export const createSupplier = mutation({
       updatedAt: now,
     });
 
+    if (args.productIds && args.productIds.length > 0) {
+      await syncSupplierProducts(
+        ctx,
+        activeBusinessId,
+        supplierId,
+        args.productIds,
+        now,
+      );
+    }
+
     return { supplierId };
   },
 });
@@ -199,6 +268,7 @@ export const updateSupplier = mutation({
     description: v.optional(v.string()),
     contact: v.optional(v.string()),
     isActive: v.boolean(),
+    productIds: v.optional(v.array(v.id("products"))),
   },
   handler: async (ctx, args) => {
     const { role, activeBusinessId } = await requireMasterBusinessContext(
@@ -218,13 +288,54 @@ export const updateSupplier = mutation({
       throw new Error("INVALID_INPUT");
     }
 
+    const now = Date.now();
     await ctx.db.patch(args.supplierId, {
       name,
       description: args.description?.trim() || undefined,
       contact: args.contact?.trim() || undefined,
       isActive: args.isActive,
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
+
+    if (args.productIds !== undefined) {
+      await syncSupplierProducts(
+        ctx,
+        activeBusinessId,
+        args.supplierId,
+        args.productIds,
+        now,
+      );
+    }
+
+    return { success: true };
+  },
+});
+
+export const setSupplierProducts = mutation({
+  args: {
+    sessionToken: v.string(),
+    supplierId: v.id("suppliers"),
+    productIds: v.array(v.id("products")),
+  },
+  handler: async (ctx, args) => {
+    const { role, activeBusinessId } = await requireMasterBusinessContext(
+      ctx,
+      args.sessionToken,
+    );
+    assertAcl(role, "master_produk");
+
+    const supplier = await ctx.db.get(args.supplierId);
+    if (!supplier || supplier.businessId !== activeBusinessId) {
+      throw new Error("SUPPLIER_NOT_FOUND");
+    }
+
+    await syncSupplierProducts(
+      ctx,
+      activeBusinessId,
+      args.supplierId,
+      args.productIds,
+      Date.now(),
+    );
 
     return { success: true };
   },

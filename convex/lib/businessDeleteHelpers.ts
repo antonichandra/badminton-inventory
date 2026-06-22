@@ -44,6 +44,16 @@ export async function deleteBusinessCompletely(
     await ctx.db.delete(entry._id);
   }
 
+  const supplierProductLinks = await ctx.db
+    .query("supplierProducts")
+    .withIndex("by_business_and_supplier", (q) =>
+      q.eq("businessId", businessId),
+    )
+    .collect();
+  for (const link of supplierProductLinks) {
+    await ctx.db.delete(link._id);
+  }
+
   const rollups = await ctx.db
     .query("businessDailyRollups")
     .withIndex("by_businessId", (q) => q.eq("businessId", businessId))

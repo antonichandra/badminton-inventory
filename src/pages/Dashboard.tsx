@@ -236,15 +236,24 @@ export function DashboardPage() {
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                 {translate("dashboardAttention")}
               </h3>
-              {hasAnalytics && (
+              <div className="flex items-center gap-3">
                 <Link
-                  to="/analytics"
+                  to="/stok"
                   viewTransition
                   className="text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
                 >
-                  {translate("dashboardViewAnalytics")}
+                  {translate("dashboardViewStock")}
                 </Link>
-              )}
+                {hasAnalytics && (
+                  <Link
+                    to="/analytics"
+                    viewTransition
+                    className="text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                  >
+                    {translate("dashboardViewAnalytics")}
+                  </Link>
+                )}
+              </div>
             </div>
             {lowStock === undefined ? (
               <LoadingState variant="inline" />
@@ -326,15 +335,24 @@ export function DashboardPage() {
             <h3 className="font-semibold text-amber-800 dark:text-amber-300">
               {translate("dashboardExpiringSoon")}
             </h3>
-            {hasAnalytics && (
+            <div className="flex items-center gap-3">
               <Link
-                to="/analytics"
+                to="/stok"
                 viewTransition
                 className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
               >
-                {translate("dashboardViewAnalytics")}
+                {translate("dashboardViewStock")}
               </Link>
-            )}
+              {hasAnalytics && (
+                <Link
+                  to="/analytics"
+                  viewTransition
+                  className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
+                >
+                  {translate("dashboardViewAnalytics")}
+                </Link>
+              )}
+            </div>
           </div>
           {expiring === undefined ? (
             <LoadingState variant="inline" />

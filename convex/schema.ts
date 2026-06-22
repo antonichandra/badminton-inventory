@@ -67,7 +67,11 @@ export const supplierPaymentStatus = v.union(
 
 export const paymentMethod = v.union(v.literal("CASH"), v.literal("QRIS"));
 
-export const cashEntryType = v.union(v.literal("EXPENSE"), v.literal("DEPOSIT"));
+export const cashEntryType = v.union(
+  v.literal("EXPENSE"),
+  v.literal("DEPOSIT"),
+  v.literal("INCOME"),
+);
 
 export const stockMovementType = v.union(
   v.literal("SALE"),
@@ -237,6 +241,7 @@ export default defineSchema({
     unit: v.string(),
     trackExpiry: v.optional(v.boolean()),
     defaultUnitCost: v.optional(v.number()),
+    unitsPerPurchaseUnit: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -267,6 +272,17 @@ export default defineSchema({
   })
     .index("by_businessId", ["businessId"])
     .index("by_business_and_name", ["businessId", "name"]),
+
+  supplierProducts: defineTable({
+    businessId: v.id("businesses"),
+    supplierId: v.id("suppliers"),
+    productId: v.id("products"),
+    createdAt: v.number(),
+  })
+    .index("by_supplierId", ["supplierId"])
+    .index("by_productId", ["productId"])
+    .index("by_business_and_supplier", ["businessId", "supplierId"])
+    .index("by_supplier_and_product", ["supplierId", "productId"]),
 
   shifts: defineTable({
     businessId: v.id("businesses"),
@@ -421,6 +437,9 @@ export default defineSchema({
     businessId: v.id("businesses"),
     closedAt: v.number(),
     totalRevenue: v.number(),
+    recordedRevenue: v.optional(v.number()),
+    impliedRevenue: v.optional(v.number()),
+    cashIncome: v.optional(v.number()),
     totalCogs: v.number(),
     grossProfit: v.number(),
     cashSales: v.number(),

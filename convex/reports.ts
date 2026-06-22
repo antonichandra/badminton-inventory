@@ -17,7 +17,7 @@ import {
   findShiftAtTimestamp,
   resolvePriceKind,
 } from "./lib/productPriceHistoryHelpers";
-import { formatDateKey } from "./lib/shiftHelpers";
+import { formatDateKey, getOpenShiftForBusiness } from "./lib/shiftHelpers";
 
 function resolveSaleDateRange(args: {
   days?: number;
@@ -399,6 +399,126 @@ export const getProductPriceHistory = query({
 
 /** @deprecated Use getProductPriceHistory */
 export const getSellPriceHistory = getProductPriceHistory;
+
+export const getInventoryStock = query({
+  args: {
+    sessionToken: v.string(),
+    businessId: v.optional(v.id("businesses")),
+    search: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!hasAcl(role, "kasir") && !hasAcl(role, "master_produk")) {
+      return { hasOpenShift: false, products: [] };
+    }
+
+    const businessId = await resolveScopedBusinessId(
+      ctx,
+      user,
+      role,
+      args.businessId,
+    );
+    if (!businessId) return { hasOpenShift: false, products: [] };
+
+    await assertBusinessAccess(ctx, user, role, businessId);
+
+    const searchLower = args.search?.trim().toLowerCase() ?? "";
+
+    const products = await ctx.db
+      .query("products")
+      .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+      .collect();
+
+    const retailProducts = products
+      .filter((product) => product.isActive && product.type === "RETAIL")
+      .filter((product) =>
+        searchLower ? product.name.toLowerCase().includes(searchLower) : true,
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const batchRows = await ctx.db
+      .query("stockReceiptItems")
+      .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+      .collect();
+
+    const supplierCache = new Map<string, string>();
+    async function supplierName(supplierId: (typeof batchRows)[0]["supplierId"]) {
+      const key = supplierId;
+      if (supplierCache.has(key)) return supplierCache.get(key)!;
+      const supplier = await ctx.db.get(supplierId);
+      const name = supplier?.name ?? "—";
+      supplierCache.set(key, name);
+      return name;
+    }
+
+    const batchesByProduct = new Map<string, typeof batchRows>();
+    for (const batch of batchRows) {
+      if (batch.qtyRemaining <= 0) continue;
+      const list = batchesByProduct.get(batch.productId) ?? [];
+      list.push(batch);
+      batchesByProduct.set(batch.productId, list);
+    }
+
+    const openShift = await getOpenShiftForBusiness(ctx, businessId);
+    const reservedByProduct = new Map<string, number>();
+    if (openShift) {
+      const saleLines = await ctx.db
+        .query("saleLines")
+        .withIndex("by_shiftId", (q) => q.eq("shiftId", openShift._id))
+        .collect();
+
+      for (const line of saleLines) {
+        const product = await ctx.db.get(line.productId);
+        if (!product || product.type !== "RETAIL") continue;
+        reservedByProduct.set(
+          line.productId,
+          (reservedByProduct.get(line.productId) ?? 0) + line.qty,
+        );
+      }
+    }
+
+    const results = [];
+    for (const product of retailProducts) {
+      const productBatches = (batchesByProduct.get(product._id) ?? []).sort(
+        (a, b) => a.createdAt - b.createdAt,
+      );
+
+      const batches = [];
+      for (const batch of productBatches) {
+        batches.push({
+          batchId: batch._id,
+          qty: batch.qty,
+          qtyRemaining: batch.qtyRemaining,
+          unitCost: batch.unitCost,
+          expiresAt: batch.expiresAt,
+          receivedAt: batch.createdAt,
+          supplierName: await supplierName(batch.supplierId),
+        });
+      }
+
+      const qtyOnHand = batches.reduce((sum, batch) => sum + batch.qtyRemaining, 0);
+      const reservedQty = reservedByProduct.get(product._id) ?? 0;
+      const qtyEstimated = Math.max(0, qtyOnHand - reservedQty);
+
+      results.push({
+        productId: product._id,
+        productName: product.name,
+        unit: product.unit,
+        sellPrice: product.sellPrice,
+        trackExpiry: product.trackExpiry ?? false,
+        qtyOnHand,
+        reservedQty,
+        qtyEstimated,
+        batches,
+      });
+    }
+
+    return {
+      hasOpenShift: openShift != null,
+      products: results,
+    };
+  },
+});
 
 export const getSupplierCostHistory = query({
   args: {

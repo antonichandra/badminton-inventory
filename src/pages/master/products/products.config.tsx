@@ -19,6 +19,8 @@ export interface ProductRow {
   unit: string;
   isActive: boolean;
   trackExpiry?: boolean;
+  defaultUnitCost?: number;
+  unitsPerPurchaseUnit?: number;
   unitCost?: number | null;
   margin?: number | null;
 }

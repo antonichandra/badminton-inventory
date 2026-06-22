@@ -8,7 +8,7 @@ import { ConfirmModal } from "../../core/components/ui/ConfirmModal";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
 import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
-import { SalesByTierTabs } from "./SalesByTierTabs";
+import { CloseShiftStockPreview } from "./CloseShiftStockPreview";
 import { formatRupiah } from "./utils";
 
 interface CloseShiftWizardProps {
@@ -32,7 +32,6 @@ export function CloseShiftWizard({
   const cashPreview = useQuery(api.shifts.getShiftCashPreview, {
     sessionToken,
   });
-  const liveStats = useQuery(api.shifts.getShiftLiveStats, { sessionToken });
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [closingStock, setClosingStock] = useState<Record<string, string>>({});
@@ -54,21 +53,49 @@ export function CloseShiftWizard({
     });
   }, [stockContext, closingStock]);
 
+  const closingStockPayload = useMemo(
+    () =>
+      stockRows.map((row) => ({
+        productId: row.productId,
+        qty: row.closingQty,
+      })),
+    [stockRows],
+  );
+
+  const closePreview = useQuery(
+    api.shifts.getShiftClosePreview,
+    step >= 3
+      ? {
+          sessionToken,
+          reportedCash: Number(closingCash) || 0,
+          verifiedQris: Number(closingQris) || 0,
+          closingStock: closingStockPayload,
+        }
+      : "skip",
+  );
+
   const cashSummary = useMemo(() => {
     if (!cashPreview) return null;
     const actualCash = Number(closingCash) || 0;
     const actualQris = Number(closingQris) || 0;
     const totalSales = cashPreview.totalSales ?? 0;
+    const cashIncome = cashPreview.cashIncome ?? 0;
     const expectedCashInDrawer =
       cashPreview.openingCash +
-      totalSales -
+      totalSales +
+      cashIncome -
       actualQris -
       cashPreview.expenses -
       cashPreview.deposits;
     const totalExpected =
-      cashPreview.openingCash + totalSales - cashPreview.expenses - cashPreview.deposits;
+      cashPreview.openingCash +
+      totalSales +
+      cashIncome -
+      cashPreview.expenses -
+      cashPreview.deposits;
     return {
       totalSales,
+      cashIncome,
       expectedCashInDrawer,
       actualCash,
       actualQris,
@@ -83,7 +110,7 @@ export function CloseShiftWizard({
     };
   }, [cashPreview, closingCash, closingQris]);
 
-  const totalRevenue = liveStats?.paidRevenue ?? 0;
+  const step3Cash = closePreview?.cashSummary ?? null;
 
   const handleClose = async () => {
     setIsSaving(true);
@@ -202,6 +229,10 @@ export function CloseShiftWizard({
               {formatRupiah(cashSummary.expenses)}
             </p>
             <p>
+              {translate("kasirCashIncome")}:{" "}
+              {formatRupiah(cashSummary.cashIncome)}
+            </p>
+            <p>
               {translate("kasirCashDeposit")}:{" "}
               {formatRupiah(cashSummary.deposits)}
             </p>
@@ -223,22 +254,56 @@ export function CloseShiftWizard({
             {translate("kasirSummary")}
           </h3>
 
-          <SalesByTierTabs tiers={liveStats?.salesByPriceTier ?? []} />
+          {closePreview ? (
+            <>
+              {(closePreview.overInputQtyTotal > 0 ||
+                closePreview.missInputQtyTotal > 0) && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+                  <p className="font-medium text-amber-900 dark:text-amber-200">
+                    {translate("kasirSalesGapTitle")}
+                  </p>
+                  <p className="mt-1 text-amber-800 dark:text-amber-300">
+                    {translate("kasirOverInput")}: {closePreview.overInputQtyTotal}{" "}
+                    {translate("kasirUnits")} · {translate("kasirMissInput")}:{" "}
+                    {closePreview.missInputQtyTotal} {translate("kasirUnits")}
+                  </p>
+                </div>
+              )}
 
-          <ShiftCashBreakdown
-            openingCash={cashSummary.openingCash}
-            totalSales={cashSummary.totalSales}
-            verifiedQris={cashSummary.actualQris}
-            expenses={cashSummary.expenses}
-            deposits={cashSummary.deposits}
-            expectedCashInDrawer={cashSummary.expectedCashInDrawer}
-            reportedCash={cashSummary.actualCash}
-            cashVariance={cashSummary.cashVariance}
-            totalRevenue={totalRevenue}
-            totalCogs={liveStats?.totalCogs}
-            grossProfit={liveStats?.grossProfit}
-            compact
-          />
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase text-slate-500">
+                  {translate("kasirTabStock")}
+                </p>
+                <CloseShiftStockPreview rows={closePreview.stockPreview} />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500">{translate("loading")}</p>
+          )}
+
+          {step3Cash && (
+            <ShiftCashBreakdown
+              openingCash={step3Cash.openingCash}
+              totalSales={step3Cash.totalSales}
+              cashIncome={step3Cash.cashIncome}
+              verifiedQris={step3Cash.verifiedQris}
+              recordedQrisSales={step3Cash.recordedQrisSales}
+              expenses={step3Cash.expenses}
+              deposits={step3Cash.deposits}
+              expectedCashInDrawer={step3Cash.expectedCashInDrawer}
+              reportedCash={step3Cash.reportedCash}
+              cashVariance={step3Cash.cashVariance}
+              totalRevenue={closePreview?.totalRevenue}
+              recordedRevenue={closePreview?.recordedRevenue}
+              impliedRevenue={closePreview?.impliedRevenue}
+              overInputQtyTotal={closePreview?.overInputQtyTotal}
+              missInputQtyTotal={closePreview?.missInputQtyTotal}
+              showRevenueBreakdown={
+                (closePreview?.impliedRevenue ?? 0) > 0
+              }
+              compact
+            />
+          )}
 
           <div className="flex justify-between">
             <Button variant="ghost" onClick={() => setStep(2)}>

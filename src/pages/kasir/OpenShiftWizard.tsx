@@ -133,7 +133,15 @@ export function OpenShiftWizard({
       onComplete();
     } catch (error) {
       console.error(error);
-      showToast({ type: "error", message: translate("unexpectedError") });
+      const message =
+        error instanceof Error &&
+        error.message.startsWith("OPENING_UNIT_COST_REQUIRED:")
+          ? translate("kasirOpeningUnitCostRequired").replace(
+              "{name}",
+              error.message.split(":").slice(1).join(":"),
+            )
+          : translate("unexpectedError");
+      showToast({ type: "error", message });
     } finally {
       setIsSaving(false);
     }

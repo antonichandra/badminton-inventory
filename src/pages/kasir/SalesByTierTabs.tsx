@@ -19,6 +19,7 @@ export type PriceTierRow = {
   qty: number;
   revenue: number;
   cogs?: number;
+  unitCost?: number;
   grossProfit?: number;
   productType?: "RETAIL" | "RENTAL";
   rentalHoursTotal?: number;
@@ -97,6 +98,9 @@ export function SalesByTierTabs({
               <tr>
                 <KasirTh>Produk</KasirTh>
                 <KasirTh>{translate("kasirPriceTier")}</KasirTh>
+                {showGrossProfit && tab === "retail" && (
+                  <KasirTh>{translate("kasirBuyPrice")}</KasirTh>
+                )}
                 <KasirTh>
                   {tab === "rental"
                     ? translate("kasirSoldUnitHours")
@@ -121,6 +125,13 @@ export function SalesByTierTabs({
                     {formatRupiah(tier.unitPrice)}
                     {tab === "rental" ? translate("kasirPerHour") : ""}
                   </KasirTd>
+                  {showGrossProfit && tab === "retail" && (
+                    <KasirTd>
+                      {tier.unitCost != null && tier.unitCost > 0
+                        ? formatRupiah(tier.unitCost)
+                        : "—"}
+                    </KasirTd>
+                  )}
                   <KasirTd>
                     {tab === "rental"
                       ? (tier.rentalHoursTotal ?? 0)

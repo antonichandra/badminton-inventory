@@ -12,6 +12,7 @@ export interface InventoryResetSummary {
   shiftCloseRequestsDeleted: number;
   stockReceiptItemsDeleted: number;
   supplierCostHistoryDeleted: number;
+  supplierProductsDeleted: number;
   stockReceiptsDeleted: number;
   shiftsDeleted: number;
   sellPriceHistoryDeleted: number;
@@ -79,6 +80,10 @@ export async function resetAllInventoryData(
     ctx.db.query("supplierCostHistory").collect(),
   );
 
+  const supplierProductsDeleted = await deleteAllRows(ctx, () =>
+    ctx.db.query("supplierProducts").collect(),
+  );
+
   const stockReceiptsDeleted = await deleteAllRows(ctx, () =>
     ctx.db.query("stockReceipts").collect(),
   );
@@ -115,6 +120,7 @@ export async function resetAllInventoryData(
     shiftCloseRequestsDeleted,
     stockReceiptItemsDeleted,
     supplierCostHistoryDeleted,
+    supplierProductsDeleted,
     stockReceiptsDeleted,
     shiftsDeleted,
     sellPriceHistoryDeleted,
