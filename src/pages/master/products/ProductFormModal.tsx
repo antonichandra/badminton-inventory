@@ -35,6 +35,8 @@ export function ProductFormModal({
   const [rentalPrice, setRentalPrice] = useState("0");
   const [unit, setUnit] = useState("pcs");
   const [trackExpiry, setTrackExpiry] = useState(false);
+  const [defaultUnitCost, setDefaultUnitCost] = useState("0");
+  const [unitsPerPurchaseUnit, setUnitsPerPurchaseUnit] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +51,12 @@ export function ProductFormModal({
       setRentalPrice(String(product.rentalPricePerHour ?? 0));
       setUnit(product.unit);
       setTrackExpiry(product.trackExpiry ?? false);
+      setDefaultUnitCost(String(product.defaultUnitCost ?? 0));
+      setUnitsPerPurchaseUnit(
+        product.unitsPerPurchaseUnit != null
+          ? String(product.unitsPerPurchaseUnit)
+          : "",
+      );
       setIsActive(product.isActive);
     } else {
       setName("");
@@ -57,6 +65,8 @@ export function ProductFormModal({
       setRentalPrice("0");
       setUnit("pcs");
       setTrackExpiry(false);
+      setDefaultUnitCost("0");
+      setUnitsPerPurchaseUnit("");
       setIsActive(true);
     }
     setError(null);
@@ -67,6 +77,10 @@ export function ProductFormModal({
     setError(null);
 
     try {
+      const packSize = unitsPerPurchaseUnit.trim()
+        ? Number(unitsPerPurchaseUnit)
+        : undefined;
+
       const payload = {
         sessionToken,
         name,
@@ -75,6 +89,9 @@ export function ProductFormModal({
         rentalPricePerHour: Number(rentalPrice) || 0,
         unit: type === "RENTAL" ? "jam" : unit,
         trackExpiry: type === "RETAIL" ? trackExpiry : false,
+        defaultUnitCost:
+          type === "RETAIL" ? Number(defaultUnitCost) || 0 : undefined,
+        unitsPerPurchaseUnit: type === "RETAIL" ? packSize : undefined,
       };
 
       if (product) {
@@ -146,6 +163,21 @@ export function ProductFormModal({
               min={0}
               format="currency"
               required
+            />
+            <InputNumber
+              label={translate("productDefaultUnitCost")}
+              value={defaultUnitCost}
+              onChange={setDefaultUnitCost}
+              min={0}
+              format="currency"
+              required
+            />
+            <InputNumber
+              label={translate("productUnitsPerPurchaseUnit")}
+              value={unitsPerPurchaseUnit}
+              onChange={setUnitsPerPurchaseUnit}
+              min={1}
+              placeholder="12"
             />
             <InputText
               label={translate("productUnit")}

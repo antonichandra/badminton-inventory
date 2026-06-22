@@ -14,6 +14,7 @@ export const nav = {
     menuRole: "Role",
     menuAkun: "Users",
     menuAnalytics: "Analitik",
+    menuStok: "Stok",
   },
   EN: {
     navDashboard: "Dashboard",
@@ -30,5 +31,6 @@ export const nav = {
     menuRole: "Roles",
     menuAkun: "Users",
     menuAnalytics: "Analytics",
+    menuStok: "Stock",
   },
 } as const;

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
-import { Plus } from "lucide-react";
+import { Plus, RotateCcw } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { AdminListStats } from "../../core/components/AdminListStats";
@@ -49,6 +49,7 @@ export function BusinessListPage() {
   const cancelBusinessDeletion = useMutation(
     api.businesses.cancelBusinessDeletion,
   );
+  const resetInventoryData = useMutation(api.maintenance.resetInventoryData);
 
   const { showToast } = useToast();
   const [actingBusinessId, setActingBusinessId] =
@@ -58,6 +59,9 @@ export function BusinessListPage() {
     business: BusinessRow;
   } | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [showResetInventoryConfirm, setShowResetInventoryConfirm] =
+    useState(false);
+  const [isResettingInventory, setIsResettingInventory] = useState(false);
 
   const businessStatusOptions = useMemo(
     () => buildBusinessStatusOptions(translate),
@@ -205,6 +209,35 @@ export function BusinessListPage() {
     translate,
   ]);
 
+  const handleConfirmResetInventory = useCallback(async () => {
+    if (!sessionToken) {
+      showToast({
+        type: "error",
+        message: translate("businessResetInventoryError"),
+      });
+      return;
+    }
+
+    setIsResettingInventory(true);
+
+    try {
+      await resetInventoryData({ sessionToken });
+      setShowResetInventoryConfirm(false);
+      showToast({
+        type: "success",
+        message: translate("businessResetInventorySuccess"),
+      });
+    } catch (error) {
+      console.error("Reset inventory data failed:", error);
+      showToast({
+        type: "error",
+        message: translate("businessResetInventoryError"),
+      });
+    } finally {
+      setIsResettingInventory(false);
+    }
+  }, [resetInventoryData, sessionToken, showToast, translate]);
+
   const columns = useMemo(
     () =>
       buildBusinessTableColumns(
@@ -338,6 +371,17 @@ export function BusinessListPage() {
             </Button>
           </Link>
         )}
+        {isSuperAdmin && (
+          <Button
+            variant="danger"
+            size="md"
+            className="w-full shrink-0 sm:w-auto"
+            leftIcon={<RotateCcw className="h-4 w-4" />}
+            onClick={() => setShowResetInventoryConfirm(true)}
+          >
+            {translate("businessResetInventory")}
+          </Button>
+        )}
       </PageTopSection>
 
       {isSuperAdmin && (
@@ -404,6 +448,22 @@ export function BusinessListPage() {
           confirmVariant={confirmCopy.confirmVariant ?? "primary"}
         />
       )}
+
+      <ConfirmModal
+        open={showResetInventoryConfirm}
+        onClose={() => {
+          if (!isResettingInventory) {
+            setShowResetInventoryConfirm(false);
+          }
+        }}
+        onConfirm={() => void handleConfirmResetInventory()}
+        title={translate("businessResetInventoryConfirmTitle")}
+        description={translate("businessResetInventoryConfirmDesc")}
+        confirmLabel={translate("businessResetInventory")}
+        cancelLabel={translate("cancel")}
+        loading={isResettingInventory}
+        confirmVariant="danger"
+      />
     </PermissionGuard>
   );
 }

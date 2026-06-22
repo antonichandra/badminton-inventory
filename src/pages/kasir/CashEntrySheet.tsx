@@ -12,7 +12,7 @@ interface CashEntrySheetProps {
   open: boolean;
   onClose: () => void;
   sessionToken: string;
-  type: "EXPENSE" | "DEPOSIT";
+  type: "EXPENSE" | "DEPOSIT" | "INCOME";
   title: string;
   onBack?: () => void;
 }

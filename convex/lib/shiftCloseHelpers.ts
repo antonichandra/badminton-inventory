@@ -216,6 +216,17 @@ export async function finalizeShiftClose(
     shift._id,
   );
 
+  const recordedRevenue = salesStats.paidRevenue;
+  let impliedRevenue = 0;
+  for (const row of stockReconciliation) {
+    if (row.missInputQty <= 0) continue;
+    const product = await ctx.db.get(row.productId);
+    if (!product || product.type !== "RETAIL") continue;
+    impliedRevenue += row.missInputQty * product.sellPrice;
+  }
+  const totalRevenue = recordedRevenue + impliedRevenue;
+  const grossProfit = totalRevenue - totalCogs;
+
   const overInputQtyTotal = stockReconciliation.reduce(
     (sum, row) => sum + row.overInputQty,
     0,
@@ -229,9 +240,12 @@ export async function finalizeShiftClose(
     shiftId: shift._id,
     businessId: shift.businessId,
     closedAt: now,
-    totalRevenue: salesStats.paidRevenue,
+    totalRevenue,
+    recordedRevenue,
+    impliedRevenue,
+    cashIncome: cashSummary.cashIncome,
     totalCogs,
-    grossProfit: salesStats.paidRevenue - totalCogs,
+    grossProfit,
     cashSales: cashSummary.recordedCashSales,
     qrisSales: cashSummary.recordedQrisSales,
     expenses: cashSummary.expenses,
@@ -320,9 +334,21 @@ export async function computeClosePreview(
     closingStock.map((item) => [item.productId, item.qty]),
   );
 
-  const stockPreview = [];
+  const stockPreview: Array<{
+    productId: Id<"products">;
+    productName: string;
+    openingQty: number;
+    receivedQty: number;
+    writeOffQty: number;
+    closingQty: number;
+    soldFromStock: number;
+    soldFromLines: number;
+    overInputQty: number;
+    missInputQty: number;
+  }> = [];
   let overInputQtyTotal = 0;
   let missInputQtyTotal = 0;
+  let impliedRevenue = 0;
 
   const saleLines = await ctx.db
     .query("saleLines")
@@ -365,6 +391,9 @@ export async function computeClosePreview(
 
     overInputQtyTotal += overInputQty;
     missInputQtyTotal += missInputQty;
+    if (product.type === "RETAIL" && missInputQty > 0) {
+      impliedRevenue += missInputQty * product.sellPrice;
+    }
 
     stockPreview.push({
       productId: snapshot.productId,
@@ -386,11 +415,42 @@ export async function computeClosePreview(
     closingQris: verifiedQris,
   };
   const cashSummary = await getShiftCashSummary(ctx, previewShift);
+  const recordedRevenue = cashSummary.totalSales;
+  const totalRevenue = recordedRevenue + impliedRevenue;
+  const expectedCashInDrawer =
+    shift.openingCash +
+    totalRevenue +
+    cashSummary.cashIncome -
+    verifiedQris -
+    cashSummary.expenses -
+    cashSummary.deposits;
+  const totalExpected =
+    shift.openingCash +
+    totalRevenue +
+    cashSummary.cashIncome -
+    cashSummary.expenses -
+    cashSummary.deposits;
+  const totalActual = reportedCash + verifiedQris;
+  const cashVariance = reportedCash - expectedCashInDrawer;
+  const totalVariance = totalActual - totalExpected;
 
   return {
     stockPreview,
     overInputQtyTotal,
     missInputQtyTotal,
-    cashSummary,
+    recordedRevenue,
+    impliedRevenue,
+    totalRevenue,
+    cashSummary: {
+      ...cashSummary,
+      totalSales: totalRevenue,
+      expectedCashInDrawer,
+      cashVariance,
+      totalExpected,
+      totalVariance,
+      expectedCash: expectedCashInDrawer,
+      expectedTotal: totalExpected,
+      variance: totalVariance,
+    },
   };
 }

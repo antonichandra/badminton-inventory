@@ -5,6 +5,7 @@ import { Button } from "../../core/components/ui/Button";
 import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { formatDateTime } from "../../core/utils/formatDate";
+import { showProfitDetail } from "../../core/utils/showProfitDetail";
 import { SalesByTierTabs } from "./SalesByTierTabs";
 import {
   KasirTableShell,
@@ -29,6 +30,7 @@ type TopProductRow = {
   qty: number;
   revenue: number;
   cogs?: number;
+  unitCost?: number;
   grossProfit?: number;
 };
 
@@ -39,7 +41,7 @@ export function ShiftReportPanel({
 }: ShiftReportPanelProps) {
   const { translate, language } = useLanguage();
   const { role } = useAuth();
-  const showGrossProfit = role?.name === "ADMIN";
+  const showGrossProfit = showProfitDetail(role);
 
   const liveStats = useQuery(api.shifts.getShiftLiveStats, { sessionToken });
   const summaries = useQuery(api.shifts.listShiftSummaries, {
@@ -63,9 +65,17 @@ export function ShiftReportPanel({
             <div>
               <p className="text-slate-500">{translate("kasirRevenue")}</p>
               <p className="font-semibold">
-                {formatRupiah(liveStats.paidRevenue)}
+                {formatRupiah(liveStats.totalRevenue ?? liveStats.paidRevenue)}
               </p>
             </div>
+            {showGrossProfit && liveStats.impliedRevenue > 0 && (
+              <div>
+                <p className="text-slate-500">{translate("kasirImpliedRevenue")}</p>
+                <p className="font-semibold text-blue-700 dark:text-blue-400">
+                  {formatRupiah(liveStats.impliedRevenue)}
+                </p>
+              </div>
+            )}
             {showGrossProfit && liveStats.grossProfit !== undefined && (
               <div>
                 <p className="text-slate-500">{translate("kasirGrossProfit")}</p>
@@ -89,7 +99,10 @@ export function ShiftReportPanel({
                       <KasirTh>{translate("kasirSoldQty")}</KasirTh>
                       <KasirTh>{translate("kasirRevenue")}</KasirTh>
                       {showGrossProfit && (
-                        <KasirTh>{translate("kasirGrossProfit")}</KasirTh>
+                        <>
+                          <KasirTh>{translate("kasirBuyPrice")}</KasirTh>
+                          <KasirTh>{translate("kasirGrossProfit")}</KasirTh>
+                        </>
                       )}
                     </tr>
                   </thead>
@@ -104,11 +117,18 @@ export function ShiftReportPanel({
                           {formatRupiah(p.revenue)}
                         </KasirTd>
                         {showGrossProfit && (
-                          <KasirTd className="font-medium text-emerald-700 dark:text-emerald-400">
-                            {formatRupiah(
-                              p.grossProfit ?? p.revenue - (p.cogs ?? 0),
-                            )}
-                          </KasirTd>
+                          <>
+                            <KasirTd>
+                              {p.unitCost != null && p.unitCost > 0
+                                ? formatRupiah(p.unitCost)
+                                : "—"}
+                            </KasirTd>
+                            <KasirTd className="font-medium text-emerald-700 dark:text-emerald-400">
+                              {formatRupiah(
+                                p.grossProfit ?? p.revenue - (p.cogs ?? 0),
+                              )}
+                            </KasirTd>
+                          </>
                         )}
                       </tr>
                     ))}
@@ -122,6 +142,38 @@ export function ShiftReportPanel({
             tiers={liveStats.salesByPriceTier}
             showGrossProfit={showGrossProfit}
           />
+
+          {(liveStats.cashEntries.length > 0 || liveStats.writeOffs.length > 0) && (
+            <div className="mt-6 space-y-4">
+              {liveStats.cashEntries.filter((e) => e.type === "EXPENSE").length >
+                0 && (
+                <LiveCashTable
+                  title={translate("kasirTabExpenses")}
+                  rows={liveStats.cashEntries.filter((e) => e.type === "EXPENSE")}
+                />
+              )}
+              {liveStats.cashEntries.filter((e) => e.type === "DEPOSIT").length >
+                0 && (
+                <LiveCashTable
+                  title={translate("kasirTabDeposits")}
+                  rows={liveStats.cashEntries.filter((e) => e.type === "DEPOSIT")}
+                />
+              )}
+              {liveStats.cashEntries.filter((e) => e.type === "INCOME").length >
+                0 && (
+                <LiveCashTable
+                  title={translate("kasirTabIncome")}
+                  rows={liveStats.cashEntries.filter((e) => e.type === "INCOME")}
+                />
+              )}
+              {liveStats.writeOffs.length > 0 && (
+                <LiveWriteOffTable
+                  title={translate("kasirTabWriteOffs")}
+                  rows={liveStats.writeOffs}
+                />
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -196,6 +248,106 @@ export function ShiftReportPanel({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function LiveCashTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{
+    _id: Id<"cashEntries">;
+    amount: number;
+    note: string;
+    createdAt: number;
+    recordedByName: string;
+  }>;
+}) {
+  const { translate, language } = useLanguage();
+
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+        {title}
+      </p>
+      <KasirTableShell>
+        <table className={kasirTableClass}>
+          <thead className={kasirTheadClass}>
+            <tr>
+              <KasirTh>{translate("kasirDate")}</KasirTh>
+              <KasirTh>{translate("kasirPayTotal")}</KasirTh>
+              <KasirTh>{translate("kasirNote")}</KasirTh>
+            </tr>
+          </thead>
+          <tbody className={kasirTbodyClass}>
+            {rows.map((row) => (
+              <tr key={row._id} className={kasirTrClass}>
+                <KasirTd className="whitespace-nowrap">
+                  {formatDateTime(row.createdAt, language)}
+                </KasirTd>
+                <KasirTd className="font-medium">
+                  {formatRupiah(row.amount)}
+                </KasirTd>
+                <KasirTd>{row.note}</KasirTd>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </KasirTableShell>
+    </div>
+  );
+}
+
+function LiveWriteOffTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{
+    _id: Id<"stockMovements">;
+    productName: string;
+    productUnit: string;
+    qty: number;
+    note: string;
+    createdAt: number;
+  }>;
+}) {
+  const { translate, language } = useLanguage();
+
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+        {title}
+      </p>
+      <KasirTableShell>
+        <table className={kasirTableClass}>
+          <thead className={kasirTheadClass}>
+            <tr>
+              <KasirTh>{translate("kasirDate")}</KasirTh>
+              <KasirTh>Produk</KasirTh>
+              <KasirTh>{translate("kasirQty")}</KasirTh>
+              <KasirTh>{translate("kasirNote")}</KasirTh>
+            </tr>
+          </thead>
+          <tbody className={kasirTbodyClass}>
+            {rows.map((row) => (
+              <tr key={row._id} className={kasirTrClass}>
+                <KasirTd className="whitespace-nowrap">
+                  {formatDateTime(row.createdAt, language)}
+                </KasirTd>
+                <KasirTd>
+                  {row.productName}
+                  {row.productUnit ? ` (${row.productUnit})` : ""}
+                </KasirTd>
+                <KasirTd>{row.qty}</KasirTd>
+                <KasirTd>{row.note}</KasirTd>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </KasirTableShell>
     </div>
   );
 }

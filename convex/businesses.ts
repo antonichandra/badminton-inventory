@@ -5,6 +5,7 @@ import {
   isBusinessOperational,
   resolveBusinessStatus,
 } from "./lib/businessHelpers";
+import { deleteBusinessCompletely } from "./lib/businessDeleteHelpers";
 import {
   assertAcl,
   canManageAllBusinesses,
@@ -597,51 +598,6 @@ export const approveBusinessDeletion = mutation({
       throw new Error("BUSINESS_NOT_PENDING_DELETE");
     }
 
-    const now = Date.now();
-    const owner = await ctx.db.get(business.ownerId);
-
-    const memberships = await ctx.db
-      .query("businessMembers")
-      .withIndex("by_businessId", (q) => q.eq("businessId", business._id))
-      .collect();
-
-    for (const membership of memberships) {
-      await ctx.db.delete(membership._id);
-    }
-
-    const invitations = await ctx.db
-      .query("staffInvitations")
-      .withIndex("by_businessId", (q) => q.eq("businessId", business._id))
-      .collect();
-
-    for (const invitation of invitations) {
-      await ctx.db.delete(invitation._id);
-    }
-
-    await ctx.db.patch(business._id, {
-      isActive: false,
-      status: "DELETE_REQUESTED",
-      updatedAt: now,
-    });
-
-    if (owner) {
-      const owned = await getOwnedBusinesses(ctx, owner._id);
-      const userUpdates: {
-        defaultBusinessId?: Id<"businesses">;
-        activeBusinessId?: Id<"businesses">;
-        updatedAt: number;
-      } = { updatedAt: now };
-
-      if (owner.defaultBusinessId === business._id) {
-        userUpdates.defaultBusinessId = owned[0]?._id;
-      }
-      if (owner.activeBusinessId === business._id) {
-        userUpdates.activeBusinessId = owned[0]?._id;
-      }
-
-      await ctx.db.patch(owner._id, userUpdates);
-    }
-
-    return { success: true };
+    return await deleteBusinessCompletely(ctx, business._id);
   },
 });

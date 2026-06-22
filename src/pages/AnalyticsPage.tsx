@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { PageHeader } from "../core/components/PageHeader";
@@ -267,9 +268,18 @@ export function AnalyticsPage() {
 
       <div className="mb-6 grid gap-4 lg:grid-cols-1">
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <h3 className="font-semibold text-slate-900 dark:text-white">
-            {translate("analyticsLowStock")}
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold text-slate-900 dark:text-white">
+              {translate("analyticsLowStock")}
+            </h3>
+            <Link
+              to="/stok"
+              viewTransition
+              className="text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+            >
+              {translate("analyticsViewStock")}
+            </Link>
+          </div>
           {(lowStock ?? []).length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">
               {translate("analyticsLowStockEmpty")}
@@ -302,9 +312,18 @@ export function AnalyticsPage() {
 
       {(expiring ?? []).length > 0 && (
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
-          <h3 className="font-semibold text-amber-800 dark:text-amber-300">
-            {translate("analyticsExpiring")}
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold text-amber-800 dark:text-amber-300">
+              {translate("analyticsExpiring")}
+            </h3>
+            <Link
+              to="/stok"
+              viewTransition
+              className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
+            >
+              {translate("analyticsViewStock")}
+            </Link>
+          </div>
           <ul className="mt-2 space-y-1 text-sm">
             {expiring!.map((batch, index) => (
               <li

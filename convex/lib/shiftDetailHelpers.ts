@@ -26,6 +26,34 @@ export async function loadShiftCashEntries(
   return enriched;
 }
 
+export async function loadShiftWriteOffs(
+  ctx: QueryCtx,
+  shiftId: Id<"shifts">,
+) {
+  const movements = await ctx.db
+    .query("stockMovements")
+    .withIndex("by_shiftId", (q) => q.eq("shiftId", shiftId))
+    .collect();
+
+  const rows = [];
+  for (const movement of movements.filter((m) => m.type === "WRITEOFF")) {
+    const product = await ctx.db.get(movement.productId);
+    const recorder = await ctx.db.get(movement.recordedBy);
+    rows.push({
+      _id: movement._id,
+      productId: movement.productId,
+      productName: product?.name ?? "—",
+      productUnit: product?.unit ?? "",
+      qty: movement.qty,
+      note: movement.note ?? "—",
+      createdAt: movement.createdAt,
+      recordedByName: recorder?.name ?? "—",
+    });
+  }
+
+  return rows.sort((a, b) => b.createdAt - a.createdAt);
+}
+
 export async function loadShiftStockReceipts(
   ctx: QueryCtx,
   shiftId: Id<"shifts">,

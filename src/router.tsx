@@ -13,6 +13,7 @@ import { BusinessListPage } from "./pages/business/BusinessListPage";
 import { BusinessFormPage } from "./pages/business/BusinessFormPage";
 import { KasirPage } from "./pages/KasirPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
+import { InventoryPage } from "./pages/InventoryPage";
 
 function RootLayout() {
   return (
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
           { path: "business/:businessId/edit", element: <BusinessFormPage /> },
           { path: "kasir", element: <KasirPage /> },
           { path: "analytics", element: <AnalyticsPage /> },
+          { path: "stok", element: <InventoryPage /> },
           { path: "master/produk", element: <ProdukPage /> },
           { path: "master/supplier", element: <SupplierPage /> },
           { path: "master/role", element: <RolePage /> },

@@ -68,6 +68,34 @@ export async function sumStockMovementsByProduct(
     .reduce((sum, movement) => sum + movement.qty, 0);
 }
 
+/** Creates shiftStockSnapshot with openingQty=0 when product joins mid-shift. */
+export async function ensureShiftStockSnapshot(
+  ctx: MutationCtx,
+  shiftId: Id<"shifts">,
+  productId: Id<"products">,
+  now: number,
+) {
+  const existing = await ctx.db
+    .query("shiftStockSnapshots")
+    .withIndex("by_shift_and_product", (q) =>
+      q.eq("shiftId", shiftId).eq("productId", productId),
+    )
+    .unique();
+
+  if (existing) return;
+
+  const product = await ctx.db.get(productId);
+  if (!product || product.type !== "RETAIL") return;
+
+  await ctx.db.insert("shiftStockSnapshots", {
+    shiftId,
+    productId,
+    openingQty: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 export async function getShiftStockReconciliation(
   ctx: QueryCtx | MutationCtx,
   shiftId: Id<"shifts">,
@@ -108,12 +136,23 @@ export async function getShiftStockReconciliation(
       snapshot.productId,
       "WRITEOFF",
     );
-    const closingQty = snapshot.closingQty ?? 0;
-    const soldQtyFromStock =
-      snapshot.openingQty + received - closingQty - writeOff;
     const soldQtyFromLines = paidQtyByProduct.get(snapshot.productId) ?? 0;
-    const overInputQty = Math.max(0, soldQtyFromLines - soldQtyFromStock);
-    const missInputQty = Math.max(0, soldQtyFromStock - soldQtyFromLines);
+
+    // Physical reconciliation only after closing stock is counted (not while shift is open).
+    const hasClosingCount = snapshot.closingQty !== undefined;
+    const closingQty = snapshot.closingQty ?? 0;
+    let soldQtyFromStock = 0;
+    let overInputQty = 0;
+    let missInputQty = 0;
+
+    if (hasClosingCount) {
+      soldQtyFromStock = Math.max(
+        0,
+        snapshot.openingQty + received - closingQty - writeOff,
+      );
+      overInputQty = Math.max(0, soldQtyFromLines - soldQtyFromStock);
+      missInputQty = Math.max(0, soldQtyFromStock - soldQtyFromLines);
+    }
 
     results.push({
       productId: snapshot.productId,
@@ -197,9 +236,27 @@ export async function getShiftSalesByPriceTier(
   return Array.from(tierMap.values())
     .map((tier) => ({
       ...tier,
+      unitCost: tier.qty > 0 ? tier.cogs / tier.qty : 0,
       grossProfit: tier.revenue - tier.cogs,
     }))
     .sort((a, b) => a.productName.localeCompare(b.productName));
+}
+
+export async function computeImpliedRevenue(
+  ctx: QueryCtx | MutationCtx,
+  shiftId: Id<"shifts">,
+) {
+  const recon = await getShiftStockReconciliation(ctx, shiftId);
+  let impliedRevenue = 0;
+
+  for (const row of recon) {
+    if (row.missInputQty <= 0) continue;
+    const product = await ctx.db.get(row.productId);
+    if (!product || product.type !== "RETAIL") continue;
+    impliedRevenue += row.missInputQty * product.sellPrice;
+  }
+
+  return impliedRevenue;
 }
 
 export async function getShiftSalesStats(
@@ -282,6 +339,7 @@ export async function getShiftSalesStats(
   const topProducts = Array.from(productMap.values())
     .map((product) => ({
       ...product,
+      unitCost: product.qty > 0 ? product.cogs / product.qty : 0,
       grossProfit: product.revenue - product.cogs,
     }))
     .sort((a, b) => b.revenue - a.revenue)
@@ -364,13 +422,22 @@ export async function getShiftCashSummary(
   const deposits = cashEntries
     .filter((entry) => entry.type === "DEPOSIT")
     .reduce((sum, entry) => sum + entry.amount, 0);
+  const cashIncome = cashEntries
+    .filter((entry) => entry.type === "INCOME")
+    .reduce((sum, entry) => sum + entry.amount, 0);
 
   const verifiedQris = shift.closingQris ?? 0;
   const reportedCash = shift.closingCash ?? 0;
   const expectedCashInDrawer =
-    shift.openingCash + totalSales - verifiedQris - expenses - deposits;
+    shift.openingCash +
+    totalSales +
+    cashIncome -
+    verifiedQris -
+    expenses -
+    deposits;
   const cashVariance = reportedCash - expectedCashInDrawer;
-  const totalExpected = shift.openingCash + totalSales - expenses - deposits;
+  const totalExpected =
+    shift.openingCash + totalSales + cashIncome - expenses - deposits;
   const totalActual = reportedCash + verifiedQris;
   const totalVariance = totalActual - totalExpected;
 
@@ -383,6 +450,7 @@ export async function getShiftCashSummary(
     qrisSales: recordedQrisSales,
     expenses,
     deposits,
+    cashIncome,
     verifiedQris,
     reportedCash,
     expectedCashInDrawer,

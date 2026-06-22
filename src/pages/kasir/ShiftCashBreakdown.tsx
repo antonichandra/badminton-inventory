@@ -5,6 +5,7 @@ import { formatRupiah } from "./utils";
 export interface ShiftCashBreakdownProps {
   openingCash: number;
   totalSales: number;
+  cashIncome?: number;
   verifiedQris: number;
   recordedQrisSales?: number;
   expenses: number;
@@ -13,16 +14,20 @@ export interface ShiftCashBreakdownProps {
   reportedCash: number;
   cashVariance: number;
   totalRevenue?: number;
+  recordedRevenue?: number;
+  impliedRevenue?: number;
   totalCogs?: number;
   grossProfit?: number;
   overInputQtyTotal?: number;
   missInputQtyTotal?: number;
+  showRevenueBreakdown?: boolean;
   compact?: boolean;
 }
 
 export function ShiftCashBreakdown({
   openingCash,
   totalSales,
+  cashIncome = 0,
   verifiedQris,
   recordedQrisSales,
   expenses,
@@ -31,10 +36,13 @@ export function ShiftCashBreakdown({
   reportedCash,
   cashVariance,
   totalRevenue,
+  recordedRevenue,
+  impliedRevenue,
   totalCogs,
   grossProfit,
   overInputQtyTotal,
   missInputQtyTotal,
+  showRevenueBreakdown = false,
   compact = false,
 }: ShiftCashBreakdownProps) {
   const { translate } = useLanguage();
@@ -56,6 +64,28 @@ export function ShiftCashBreakdown({
     >
       {!compact && (totalRevenue !== undefined || grossProfit !== undefined) && (
         <div className="mb-4 grid grid-cols-2 gap-3 border-b border-slate-200 pb-4 dark:border-slate-700 sm:grid-cols-3">
+          {showRevenueBreakdown &&
+            recordedRevenue !== undefined &&
+            (impliedRevenue ?? 0) > 0 && (
+              <>
+                <div>
+                  <p className="text-xs text-slate-500">
+                    {translate("kasirRecordedRevenue")}
+                  </p>
+                  <p className="font-semibold text-slate-900 dark:text-white">
+                    {formatRupiah(recordedRevenue)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">
+                    {translate("kasirImpliedRevenue")}
+                  </p>
+                  <p className="font-semibold text-blue-700 dark:text-blue-400">
+                    {formatRupiah(impliedRevenue ?? 0)}
+                  </p>
+                </div>
+              </>
+            )}
           {totalRevenue !== undefined && (
             <div>
               <p className="text-xs text-slate-500">{translate("kasirNetRevenue")}</p>
@@ -104,6 +134,11 @@ export function ShiftCashBreakdown({
         <Row
           label={`+ ${translate("kasirTotalSales")}`}
           value={formatRupiah(totalSales)}
+          muted
+        />
+        <Row
+          label={`+ ${translate("kasirCashIncome")}`}
+          value={formatRupiah(cashIncome)}
           muted
         />
         <Row

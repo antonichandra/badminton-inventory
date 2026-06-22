@@ -8,6 +8,7 @@ import { LoadingState } from "../../core/components/ui/LoadingState";
 import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { formatDateOnly, formatDateTime } from "../../core/utils/formatDate";
+import { showProfitDetail } from "../../core/utils/showProfitDetail";
 import { ExportShiftButton } from "./ExportShiftButton";
 import { ExportShiftPdfButton } from "./ExportShiftPdfButton";
 import { SalesByTierTabs, type PriceTierRow } from "./SalesByTierTabs";
@@ -23,7 +24,7 @@ import {
 } from "./KasirTable";
 import { formatRupiah, getShiftDurationDays } from "./utils";
 
-type SummaryTab = "stock" | "receipts" | "expenses" | "deposits";
+type SummaryTab = "stock" | "receipts" | "expenses" | "deposits" | "income" | "writeoffs";
 
 interface ShiftSummaryViewProps {
   sessionToken: string;
@@ -40,7 +41,7 @@ export function ShiftSummaryView({
 }: ShiftSummaryViewProps) {
   const { translate, language } = useLanguage();
   const { role } = useAuth();
-  const showGrossProfit = role?.name === "ADMIN";
+  const showGrossProfit = showProfitDetail(role);
   const [tab, setTab] = useState<SummaryTab>("stock");
   const [productFilter, setProductFilter] = useState("");
 
@@ -90,10 +91,12 @@ export function ShiftSummaryView({
     );
   }
 
-  const { shift, summary, cashSummary, cashEntries, stockReceipts } = data;
+  const { shift, summary, cashSummary, cashEntries, stockReceipts, writeOffs } =
+    data;
 
   const expenses = cashEntries.filter((e) => e.type === "EXPENSE");
   const deposits = cashEntries.filter((e) => e.type === "DEPOSIT");
+  const incomeEntries = cashEntries.filter((e) => e.type === "INCOME");
 
   const tabs: { id: SummaryTab; label: string; count?: number }[] = [
     {
@@ -116,6 +119,16 @@ export function ShiftSummaryView({
       label: translate("kasirTabDeposits"),
       count: deposits.length,
     },
+    {
+      id: "income",
+      label: translate("kasirTabIncome"),
+      count: incomeEntries.length,
+    },
+    {
+      id: "writeoffs",
+      label: translate("kasirTabWriteOffs"),
+      count: writeOffs.length,
+    },
   ];
 
   const closedAt = shift.closedAt ?? summary?.closedAt;
@@ -135,6 +148,9 @@ export function ShiftSummaryView({
   const cashVariance = summary?.cashVariance ?? cashSummary.cashVariance;
   const expenseTotal = summary?.expenses ?? cashSummary.expenses;
   const depositTotal = summary?.deposits ?? cashSummary.deposits;
+  const cashIncome = summary?.cashIncome ?? cashSummary.cashIncome ?? 0;
+  const recordedRevenue = summary?.recordedRevenue;
+  const impliedRevenue = summary?.impliedRevenue;
 
   const durationDays =
     closedAt && shift.openedAt
@@ -188,6 +204,7 @@ export function ShiftSummaryView({
           <ShiftCashBreakdown
             openingCash={openingCash}
             totalSales={totalSales}
+            cashIncome={cashIncome}
             verifiedQris={verifiedQris}
             recordedQrisSales={recordedQrisSales}
             expenses={expenseTotal}
@@ -196,6 +213,9 @@ export function ShiftSummaryView({
             reportedCash={reportedCash}
             cashVariance={cashVariance}
             totalRevenue={data.totalRevenue}
+            recordedRevenue={recordedRevenue}
+            impliedRevenue={impliedRevenue}
+            showRevenueBreakdown={showGrossProfit}
             totalCogs={showGrossProfit ? data.totalCogs : undefined}
             grossProfit={showGrossProfit ? data.grossProfit : undefined}
             overInputQtyTotal={summary?.overInputQtyTotal}
@@ -253,6 +273,8 @@ export function ShiftSummaryView({
           {tab === "receipts" && <ReceiptsTable rows={stockReceipts} />}
           {tab === "expenses" && <CashEntriesTable rows={expenses} />}
           {tab === "deposits" && <CashEntriesTable rows={deposits} />}
+          {tab === "income" && <CashEntriesTable rows={incomeEntries} />}
+          {tab === "writeoffs" && <WriteOffsTable rows={writeOffs} />}
         </div>
       </div>
 
@@ -468,6 +490,62 @@ function CashEntriesTable({
                 {formatDateTime(row.createdAt, language)}
               </KasirTd>
               <KasirTd className="font-medium">{formatRupiah(row.amount)}</KasirTd>
+              <KasirTd>{row.note}</KasirTd>
+              <KasirTd>{row.recordedByName}</KasirTd>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </KasirTableShell>
+  );
+}
+
+function WriteOffsTable({
+  rows,
+}: {
+  rows: Array<{
+    _id: Id<"stockMovements">;
+    productName: string;
+    productUnit: string;
+    qty: number;
+    note: string;
+    createdAt: number;
+    recordedByName: string;
+  }>;
+}) {
+  const { translate, language } = useLanguage();
+
+  if (rows.length === 0) {
+    return (
+      <p className="py-4 text-center text-sm text-slate-500">
+        {translate("kasirNoData")}
+      </p>
+    );
+  }
+
+  return (
+    <KasirTableShell>
+      <table className={kasirTableClass}>
+        <thead className={kasirTheadClass}>
+          <tr>
+            <KasirTh>{translate("kasirDate")}</KasirTh>
+            <KasirTh>Produk</KasirTh>
+            <KasirTh>{translate("kasirQty")}</KasirTh>
+            <KasirTh>{translate("kasirNote")}</KasirTh>
+            <KasirTh>{translate("kasirRecordedBy")}</KasirTh>
+          </tr>
+        </thead>
+        <tbody className={kasirTbodyClass}>
+          {rows.map((row) => (
+            <tr key={row._id} className={kasirTrClass}>
+              <KasirTd className="whitespace-nowrap">
+                {formatDateTime(row.createdAt, language)}
+              </KasirTd>
+              <KasirTd>
+                {row.productName}
+                {row.productUnit ? ` (${row.productUnit})` : ""}
+              </KasirTd>
+              <KasirTd>{row.qty}</KasirTd>
               <KasirTd>{row.note}</KasirTd>
               <KasirTd>{row.recordedByName}</KasirTd>
             </tr>

@@ -14,6 +14,13 @@ export const ANALYTICS_NAV: MenuItem = {
   permission: "analytics",
 };
 
+export const INVENTORY_NAV: MenuItem = {
+  id: "inventory",
+  labelKey: "menuStok",
+  path: "/stok",
+  permission: "kasir",
+};
+
 const PRIMARY_MENU_IDS = ["kasir", "business"] as const;
 
 export function buildPrimaryNavItems(
@@ -24,6 +31,10 @@ export function buildPrimaryNavItems(
 
   if (hasPermission(acl, "analytics")) {
     items.push(ANALYTICS_NAV);
+  }
+
+  if (hasPermission(acl, "kasir")) {
+    items.push(INVENTORY_NAV);
   }
 
   for (const id of PRIMARY_MENU_IDS) {

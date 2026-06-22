@@ -5,6 +5,8 @@ import { InputNumber } from "../../core/components/forms/InputNumber";
 import { Button } from "../../core/components/ui/Button";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
+import { CloseShiftStockPreview } from "./CloseShiftStockPreview";
+import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
 import { formatRupiah } from "./utils";
 
 interface SubmitCloseShiftWizardProps {
@@ -171,15 +173,45 @@ export function SubmitCloseShiftWizard({
             </p>
           </div>
 
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase text-slate-500">
+              {translate("kasirTabStock")}
+            </p>
+            <CloseShiftStockPreview rows={preview.stockPreview} />
+          </div>
+
           <div className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-700">
             <p>
               {translate("kasirTotalSales")}:{" "}
               {formatRupiah(preview.cashSummary.totalSales)}
             </p>
+            {(preview.impliedRevenue ?? 0) > 0 && (
+              <p className="mt-1 text-xs text-slate-500">
+                {translate("kasirRecordedRevenue")}:{" "}
+                {formatRupiah(preview.recordedRevenue ?? 0)} ·{" "}
+                {translate("kasirImpliedRevenue")}:{" "}
+                {formatRupiah(preview.impliedRevenue ?? 0)}
+              </p>
+            )}
             <p className="mt-1 text-xs text-slate-500">
               {translate("kasirSalesInfoNote")}
             </p>
           </div>
+
+          <ShiftCashBreakdown
+            openingCash={preview.cashSummary.openingCash}
+            totalSales={preview.cashSummary.totalSales}
+            cashIncome={preview.cashSummary.cashIncome}
+            verifiedQris={preview.cashSummary.verifiedQris}
+            expenses={preview.cashSummary.expenses}
+            deposits={preview.cashSummary.deposits}
+            expectedCashInDrawer={preview.cashSummary.expectedCashInDrawer}
+            reportedCash={preview.cashSummary.reportedCash}
+            cashVariance={preview.cashSummary.cashVariance}
+            overInputQtyTotal={preview.overInputQtyTotal}
+            missInputQtyTotal={preview.missInputQtyTotal}
+            compact
+          />
 
           <div className="flex justify-between">
             <Button variant="ghost" onClick={() => setStep(2)}>

@@ -33,9 +33,14 @@ import {
 import {
   loadShiftCashEntries,
   loadShiftStockReceipts,
+  loadShiftWriteOffs,
 } from "./lib/shiftDetailHelpers";
+import { createOpeningBalanceBatch } from "./lib/openingStockHelpers";
+import { assertProductsLinkedToSupplier } from "./lib/supplierProductHelpers";
 import {
   calculateLineTotal,
+  computeImpliedRevenue,
+  ensureShiftStockSnapshot,
   generatePaymentBatchId,
   getOpenShiftForBusiness,
   getShiftCashSummary,
@@ -321,20 +326,37 @@ export const getShiftLiveStats = query({
     const context = await tryOpenShiftContext(ctx, args.sessionToken);
     if (!context) return null;
     const salesStats = await getShiftSalesStats(ctx, context.shift._id);
+    const cashSummary = await getShiftCashSummary(ctx, context.shift);
+    const impliedRevenue = await computeImpliedRevenue(
+      ctx,
+      context.shift._id,
+    );
+    const recordedRevenue = salesStats.paidRevenue;
+    const totalRevenue = recordedRevenue + impliedRevenue;
     const showProfitDetail =
       isAdmin(context.role) || isSuperAdmin(context.role);
 
+    const cashEntries = await loadShiftCashEntries(ctx, context.shift._id);
+    const writeOffs = await loadShiftWriteOffs(ctx, context.shift._id);
+
     const topProducts = showProfitDetail
       ? salesStats.topProducts
-      : salesStats.topProducts.map(({ cogs, grossProfit, ...rest }) => rest);
+      : salesStats.topProducts.map(({ cogs, grossProfit, unitCost, ...rest }) => rest);
 
     const salesByPriceTier = showProfitDetail
       ? salesStats.salesByPriceTier
-      : salesStats.salesByPriceTier.map(({ cogs, grossProfit, ...rest }) => rest);
+      : salesStats.salesByPriceTier.map(({ cogs, grossProfit, unitCost, ...rest }) => rest);
 
     return {
-      paidRevenue: salesStats.paidRevenue,
+      paidRevenue: recordedRevenue,
       unpaidRevenue: salesStats.unpaidRevenue,
+      recordedRevenue,
+      impliedRevenue,
+      totalRevenue,
+      cashIncome: cashSummary.cashIncome,
+      cashSummary,
+      cashEntries,
+      writeOffs,
       topProducts,
       salesByPriceTier,
       ...(showProfitDetail
@@ -423,6 +445,7 @@ export const getShiftDetail = query({
     const cashSummary = await getShiftCashSummary(ctx, shift);
     const cashEntries = await loadShiftCashEntries(ctx, shift._id);
     const stockReceipts = await loadShiftStockReceipts(ctx, shift._id);
+    const writeOffs = await loadShiftWriteOffs(ctx, shift._id);
 
     const assignedStaff = shift.assignedStaffId
       ? await ctx.db.get(shift.assignedStaffId)
@@ -458,6 +481,7 @@ export const getShiftDetail = query({
       cashSummary,
       cashEntries,
       stockReceipts,
+      writeOffs,
       stockReconciliation,
       salesByPriceTier,
       totalRevenue,
@@ -721,14 +745,12 @@ export const openShift = mutation({
       });
 
       if (item.qty > 0) {
-        await ctx.db.insert("stockMovements", {
+        await createOpeningBalanceBatch(ctx, {
           shiftId,
           businessId: context.activeBusinessId,
           productId: item.productId,
-          type: "OPENING",
           qty: item.qty,
           recordedBy: context.user._id,
-          createdAt: now,
         });
       }
     }
@@ -772,13 +794,18 @@ export const addSaleLine = mutation({
       throw new Error("INVALID_QTY");
     }
 
+    const now = Date.now();
+
+    if (product.type === "RETAIL") {
+      await ensureShiftStockSnapshot(ctx, shift._id, product._id, now);
+    }
+
     const { unitPrice, lineTotal } = calculateLineTotal(
       product,
       args.qty,
       args.rentalHours,
     );
 
-    const now = Date.now();
     const lineId = await ctx.db.insert("saleLines", {
       shiftId: shift._id,
       businessId,
@@ -1099,6 +1126,13 @@ export const addStockReceipt = mutation({
       }
     }
 
+    await assertProductsLinkedToSupplier(
+      ctx,
+      businessId,
+      args.supplierId,
+      validItems.map((item) => item.productId),
+    );
+
     const totalAmount = validItems.reduce(
       (sum, item) => sum + item.qty * item.unitCost,
       0,
@@ -1121,6 +1155,8 @@ export const addStockReceipt = mutation({
     for (const item of validItems) {
       const product = await ctx.db.get(item.productId);
       if (!product) continue;
+
+      await ensureShiftStockSnapshot(ctx, shift._id, item.productId, now);
 
       await ctx.db.insert("stockReceiptItems", {
         receiptId,
@@ -1373,6 +1409,9 @@ export const addStockWriteOff = mutation({
       throw new Error("INVALID_NOTE");
     }
 
+    const now = Date.now();
+    await ensureShiftStockSnapshot(ctx, shift._id, args.productId, now);
+
     const movementId = await ctx.db.insert("stockMovements", {
       shiftId: shift._id,
       businessId,
@@ -1381,7 +1420,7 @@ export const addStockWriteOff = mutation({
       qty: args.qty,
       note,
       recordedBy: user._id,
-      createdAt: Date.now(),
+      createdAt: now,
     });
 
     return { movementId };

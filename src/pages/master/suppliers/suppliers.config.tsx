@@ -1,5 +1,4 @@
-import { Check } from "lucide-react";
-import { Pencil } from "lucide-react";
+import { Check, Package, Pencil } from "lucide-react";
 import type { FilterFieldConfig } from "../../../core/components/filters/types";
 import { Badge } from "../../../core/components/table/Badge";
 import type { TableColumnConfig } from "../../../core/components/table/types";
@@ -33,16 +32,21 @@ export interface SupplierRow {
   description?: string;
   contact?: string;
   isActive: boolean;
+  linkedProductCount?: number;
 }
 
 interface ColumnLabels {
   name: string;
   description: string;
   contact: string;
+  products: string;
+  productsAll: string;
+  productsCount: string;
   status: string;
   active: string;
   inactive: string;
   edit: string;
+  manageProducts: string;
 }
 
 interface FilterLabels {
@@ -84,6 +88,7 @@ export function buildSupplierFilterFields(
 export function buildSupplierTableColumns(
   labels: ColumnLabels,
   onEdit: (row: SupplierRow) => void,
+  onManageProducts: (row: SupplierRow) => void,
 ): TableColumnConfig<SupplierRow>[] {
   return [
     {
@@ -109,6 +114,21 @@ export function buildSupplierTableColumns(
       getValue: (row) => row.contact ?? "—",
     },
     {
+      type: "custom",
+      key: "products",
+      label: labels.products,
+      render: (row) => (
+        <span className="text-sm text-slate-700 dark:text-slate-300">
+          {(row.linkedProductCount ?? 0) === 0
+            ? labels.productsAll
+            : labels.productsCount.replace(
+                "{count}",
+                String(row.linkedProductCount),
+              )}
+        </span>
+      ),
+    },
+    {
       type: "badge",
       key: "status",
       label: labels.status,
@@ -122,7 +142,13 @@ export function buildSupplierTableColumns(
       headerClassName: "text-right",
       className: "text-right",
       render: (row) => (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-1">
+          <IconButton
+            tooltip={labels.manageProducts}
+            tooltipPlacement="left"
+            onClick={() => onManageProducts(row)}
+            icon={<Package className="h-4 w-4" />}
+          />
           <IconButton
             tooltip={labels.edit}
             tooltipPlacement="left"

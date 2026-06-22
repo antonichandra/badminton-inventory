@@ -9,6 +9,7 @@ import { InputNumber } from "../../core/components/forms/InputNumber";
 import { InputText } from "../../core/components/forms/InputText";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
+import { formatRupiah } from "./utils";
 
 interface StockReceiptSheetProps {
   open: boolean;
@@ -33,10 +34,6 @@ export function StockReceiptSheet({
     sessionToken,
     businessId,
   });
-  const products = useQuery(api.products.listRetailProductsForShift, {
-    sessionToken,
-    businessId,
-  });
 
   const [supplierId, setSupplierId] = useState("");
   const [note, setNote] = useState("");
@@ -46,10 +43,44 @@ export function StockReceiptSheet({
   const [costByProduct, setCostByProduct] = useState<Record<string, string>>(
     {},
   );
+  const [packQtyByProduct, setPackQtyByProduct] = useState<
+    Record<string, string>
+  >({});
+  const [packPriceByProduct, setPackPriceByProduct] = useState<
+    Record<string, string>
+  >({});
   const [expiryByProduct, setExpiryByProduct] = useState<
     Record<string, string>
   >({});
   const [isSaving, setIsSaving] = useState(false);
+
+  const supplierProducts = useQuery(
+    api.products.listRetailProductsForSupplier,
+    supplierId
+      ? {
+          sessionToken,
+          businessId,
+          supplierId: supplierId as Id<"suppliers">,
+        }
+      : "skip",
+  );
+
+  const products = supplierProducts?.products ?? [];
+  const hasProductLinks = supplierProducts?.hasProductLinks ?? false;
+
+  const clearProductInputs = () => {
+    setQtyByProduct({});
+    setCostByProduct({});
+    setPackQtyByProduct({});
+    setPackPriceByProduct({});
+    setExpiryByProduct({});
+    setProductSearch("");
+  };
+
+  const handleSupplierChange = (value: string) => {
+    setSupplierId(value);
+    clearProductInputs();
+  };
 
   const supplierOptions = useMemo(
     () =>
@@ -61,28 +92,56 @@ export function StockReceiptSheet({
   );
 
   const productRows = useMemo(() => {
-    const rows = products ?? [];
     const term = productSearch.trim().toLowerCase();
-    if (!term) return rows;
-    return rows.filter((product) =>
+    if (!term) return products;
+    return products.filter((product) =>
       product.name.toLowerCase().includes(term),
     );
   }, [products, productSearch]);
 
+  type ReceiptProduct = (typeof products)[number];
+
+  const resolveItem = (product: ReceiptProduct) => {
+    const packSize = product.unitsPerPurchaseUnit;
+    if (packSize && packSize >= 1) {
+      const packQty = Number(packQtyByProduct[product._id] ?? "0") || 0;
+      const packPrice = Number(packPriceByProduct[product._id] ?? "0") || 0;
+      return {
+        productId: product._id as Id<"products">,
+        qty: packQty * packSize,
+        unitCost: packQty > 0 ? packPrice / packSize : 0,
+        packQty,
+        packPrice,
+        packSize,
+        trackExpiry: product.trackExpiry ?? false,
+      };
+    }
+
+    return {
+      productId: product._id as Id<"products">,
+      qty: Number(qtyByProduct[product._id] ?? "0") || 0,
+      unitCost: Number(costByProduct[product._id] ?? "0") || 0,
+      packQty: 0,
+      packPrice: 0,
+      packSize: undefined as number | undefined,
+      trackExpiry: product.trackExpiry ?? false,
+    };
+  };
+
   const handleSubmit = async () => {
     if (!supplierId) return;
 
-    const allProducts = products ?? [];
+    const allProducts = products;
     const items = allProducts
-      .map((product) => ({
-        productId: product._id as Id<"products">,
-        qty: Number(qtyByProduct[product._id] ?? "0") || 0,
-        unitCost: Number(costByProduct[product._id] ?? "0") || 0,
-        expiresAt: expiryByProduct[product._id]
-          ? new Date(expiryByProduct[product._id]).getTime()
-          : undefined,
-        trackExpiry: product.trackExpiry ?? false,
-      }))
+      .map((product) => {
+        const resolved = resolveItem(product);
+        return {
+          ...resolved,
+          expiresAt: expiryByProduct[product._id]
+            ? new Date(expiryByProduct[product._id]).getTime()
+            : undefined,
+        };
+      })
       .filter((item) => item.qty > 0);
 
     if (items.length === 0) return;
@@ -107,7 +166,9 @@ export function StockReceiptSheet({
         dueAt: dueDate
           ? new Date(`${dueDate}T00:00:00`).getTime()
           : undefined,
-        items: items.map(({ trackExpiry: _, ...item }) => item),
+        items: items.map(
+          ({ trackExpiry: _, packQty, packPrice, packSize, ...item }) => item,
+        ),
       });
       showToast({
         type: "success",
@@ -115,22 +176,31 @@ export function StockReceiptSheet({
       });
       setQtyByProduct({});
       setCostByProduct({});
+      setPackQtyByProduct({});
+      setPackPriceByProduct({});
       setExpiryByProduct({});
       setNote("");
       setProductSearch("");
       setDueDate("");
+      setSupplierId("");
       onClose();
     } catch (error) {
       console.error(error);
-      showToast({ type: "error", message: translate("unexpectedError") });
+      const message =
+        error instanceof Error &&
+        error.message === "PRODUCT_NOT_LINKED_TO_SUPPLIER"
+          ? translate("kasirNoLinkedProducts")
+          : translate("unexpectedError");
+      showToast({ type: "error", message });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const hasItems = (products ?? []).some(
-    (product) => Number(qtyByProduct[product._id] ?? "0") > 0,
-  );
+  const hasItems = products.some((product) => {
+    const resolved = resolveItem(product);
+    return resolved.qty > 0;
+  });
 
   return (
     <BottomSheet
@@ -168,7 +238,7 @@ export function StockReceiptSheet({
           <Dropdown
             label={translate("kasirSupplier")}
             value={supplierId}
-            onChange={setSupplierId}
+            onChange={handleSupplierChange}
             options={supplierOptions}
             searchable
             required
@@ -208,58 +278,117 @@ export function StockReceiptSheet({
           />
 
           <div className="space-y-3">
-            {productRows.length === 0 ? (
+            {!supplierId ? (
+              <p className="text-center text-sm text-slate-500">
+                {translate("kasirSelectSupplierFirst")}
+              </p>
+            ) : hasProductLinks && products.length === 0 ? (
+              <p className="text-center text-sm text-slate-500">
+                {translate("kasirNoLinkedProducts")}
+              </p>
+            ) : productRows.length === 0 ? (
               <p className="text-center text-sm text-slate-500">
                 {translate("kasirReceiptNoProducts")}
               </p>
             ) : (
-              productRows.map((product) => (
-                <div
-                  key={product._id}
-                  className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"
-                >
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">
-                    {product.name}
-                  </p>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <InputNumber
-                      label={translate("kasirQty")}
-                      value={qtyByProduct[product._id] ?? ""}
-                      onChange={(v) =>
-                        setQtyByProduct((prev) => ({ ...prev, [product._id]: v }))
-                      }
-                      min={0}
-                    />
-                    <InputNumber
-                      label={translate("kasirUnitCost")}
-                      value={costByProduct[product._id] ?? ""}
-                      onChange={(v) =>
-                        setCostByProduct((prev) => ({ ...prev, [product._id]: v }))
-                      }
-                      min={0}
-                      format="currency"
-                    />
+              productRows.map((product) => {
+                const packSize = product.unitsPerPurchaseUnit;
+                const usesPack = packSize != null && packSize >= 1;
+                const packQty = Number(packQtyByProduct[product._id] ?? "0") || 0;
+                const packPrice =
+                  Number(packPriceByProduct[product._id] ?? "0") || 0;
+                const unitCost = usesPack && packQty > 0 ? packPrice / packSize : 0;
+                const totalQty = usesPack ? packQty * packSize : 0;
+
+                return (
+                  <div
+                    key={product._id}
+                    className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"
+                  >
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                      {product.name}
+                    </p>
+                    {usesPack ? (
+                      <>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <InputNumber
+                            label={translate("kasirPackQty")}
+                            value={packQtyByProduct[product._id] ?? ""}
+                            onChange={(v) =>
+                              setPackQtyByProduct((prev) => ({
+                                ...prev,
+                                [product._id]: v,
+                              }))
+                            }
+                            min={0}
+                          />
+                          <InputNumber
+                            label={translate("kasirPackPrice")}
+                            value={packPriceByProduct[product._id] ?? ""}
+                            onChange={(v) =>
+                              setPackPriceByProduct((prev) => ({
+                                ...prev,
+                                [product._id]: v,
+                              }))
+                            }
+                            min={0}
+                            format="currency"
+                          />
+                        </div>
+                        {packQty > 0 && packPrice > 0 && (
+                          <p className="mt-2 text-xs text-slate-500">
+                            {translate("kasirPackPreview")
+                              .replace("{totalQty}", String(totalQty))
+                              .replace("{unit}", product.unit)
+                              .replace("{unitCost}", formatRupiah(unitCost))}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <InputNumber
+                          label={translate("kasirQty")}
+                          value={qtyByProduct[product._id] ?? ""}
+                          onChange={(v) =>
+                            setQtyByProduct((prev) => ({ ...prev, [product._id]: v }))
+                          }
+                          min={0}
+                        />
+                        <InputNumber
+                          label={translate("kasirUnitCost")}
+                          value={costByProduct[product._id] ?? ""}
+                          onChange={(v) =>
+                            setCostByProduct((prev) => ({
+                              ...prev,
+                              [product._id]: v,
+                            }))
+                          }
+                          min={0}
+                          format="currency"
+                        />
+                      </div>
+                    )}
+                    {product.trackExpiry && (
+                      <div className="mt-2">
+                        <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                          {translate("kasirExpiryDate")}
+                        </label>
+                        <input
+                          type="date"
+                          value={expiryByProduct[product._id] ?? ""}
+                          onChange={(e) =>
+                            setExpiryByProduct((prev) => ({
+                              ...prev,
+                              [product._id]: e.target.value,
+                            }))
+                          }
+                          className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        />
+                      </div>
+                    )}
                   </div>
-                  {product.trackExpiry && (
-                    <div className="mt-2">
-                      <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                        {translate("kasirExpiryDate")}
-                      </label>
-                      <input
-                        type="date"
-                        value={expiryByProduct[product._id] ?? ""}
-                        onChange={(e) =>
-                          setExpiryByProduct((prev) => ({
-                            ...prev,
-                            [product._id]: e.target.value,
-                          }))
-                        }
-                        className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </section>

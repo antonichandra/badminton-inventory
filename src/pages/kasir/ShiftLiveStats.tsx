@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
+import { showProfitDetail } from "../../core/utils/showProfitDetail";
 import { formatRupiah } from "./utils";
 
 interface ShiftLiveStatsProps {
@@ -11,7 +12,7 @@ interface ShiftLiveStatsProps {
 export function ShiftLiveStats({ sessionToken }: ShiftLiveStatsProps) {
   const { translate } = useLanguage();
   const { role } = useAuth();
-  const showGrossProfit = role?.name === "ADMIN";
+  const showGrossProfit = showProfitDetail(role);
   const stats = useQuery(api.shifts.getShiftLiveStats, { sessionToken });
 
   if (!stats) return null;

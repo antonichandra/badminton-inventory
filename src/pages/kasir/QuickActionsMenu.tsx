@@ -15,7 +15,7 @@ interface QuickActionsMenuProps {
   businessId: Id<"businesses">;
 }
 
-type ActionView = "menu" | "receipt" | "expense" | "deposit" | "writeoff";
+type ActionView = "menu" | "receipt" | "expense" | "deposit" | "income" | "writeoff";
 
 export function QuickActionsMenu({
   open,
@@ -69,6 +69,19 @@ export function QuickActionsMenu({
     );
   }
 
+  if (view === "income") {
+    return (
+      <CashEntrySheet
+        open={open}
+        onClose={handleClose}
+        sessionToken={sessionToken}
+        type="INCOME"
+        title={translate("kasirCashIncome")}
+        onBack={() => setView("menu")}
+      />
+    );
+  }
+
   if (view === "writeoff") {
     return (
       <StockWriteOffSheet
@@ -89,6 +102,9 @@ export function QuickActionsMenu({
         </Button>
         <Button variant="outline" onClick={() => setView("expense")}>
           {translate("kasirCashExpense")}
+        </Button>
+        <Button variant="outline" onClick={() => setView("income")}>
+          {translate("kasirCashIncome")}
         </Button>
         <Button variant="outline" onClick={() => setView("deposit")}>
           {translate("kasirCashDeposit")}
