@@ -21,7 +21,7 @@ export const INVENTORY_NAV: MenuItem = {
   permission: "kasir",
 };
 
-const PRIMARY_MENU_IDS = ["kasir", "business"] as const;
+const PRIMARY_MENU_IDS = ["kasir"] as const;
 
 export function buildPrimaryNavItems(
   filteredMenu: MenuItem[],
@@ -66,5 +66,5 @@ export function getSecondaryMenuItems(filteredMenu: MenuItem[]): MenuItem[] {
 }
 
 export function isMasterRoute(pathname: string): boolean {
-  return pathname.startsWith("/master");
+  return pathname.startsWith("/master") || pathname.startsWith("/business");
 }
