@@ -2,12 +2,6 @@ import type { AclPermission, MenuItem } from "../../types/auth";
 
 export const MENU_CONFIG: MenuItem[] = [
   {
-    id: "business",
-    labelKey: "menuBusiness",
-    path: "/business",
-    permissions: ["business", "master_business"],
-  },
-  {
     id: "kasir",
     labelKey: "menuKasir",
     path: "/kasir",
@@ -17,6 +11,12 @@ export const MENU_CONFIG: MenuItem[] = [
     id: "master",
     labelKey: "menuMaster",
     children: [
+      {
+        id: "business",
+        labelKey: "menuBusiness",
+        path: "/business",
+        permissions: ["business", "master_business"],
+      },
       {
         id: "master-produk",
         labelKey: "menuProduk",
