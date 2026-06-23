@@ -7,7 +7,7 @@ import {
   getShiftSalesStats,
   getShiftStockReconciliation,
 } from "./shiftHelpers";
-import { resolveSaleLineCogs, getFallbackUnitCost } from "./inventoryCostHelpers";
+import { resolveSaleLineCogs } from "./inventoryCostHelpers";
 import { buildPhysicalSalesByPriceTier, shouldRebuildClosedPhysicalTiers } from "./shiftPhysicalRevenueHelpers";
 
 export const SHIFT_RETENTION_LIMIT = 10;
