@@ -1,5 +1,6 @@
 interface ExportLine {
   productName: string;
+  categoryName?: string;
   qty: number;
   unitPrice: number;
   lineTotal: number;
@@ -45,6 +46,7 @@ export function exportShiftToCsv(
     includeProfit
       ? [
           "Product",
+          "Category",
           "Qty",
           "Unit Price",
           "Total",
@@ -53,7 +55,16 @@ export function exportShiftToCsv(
           "COGS",
           "Paid At",
         ]
-      : ["Product", "Qty", "Unit Price", "Total", "Status", "Method", "Paid At"],
+      : [
+          "Product",
+          "Category",
+          "Qty",
+          "Unit Price",
+          "Total",
+          "Status",
+          "Method",
+          "Paid At",
+        ],
   );
 
   for (const line of lines) {
@@ -61,6 +72,7 @@ export function exportShiftToCsv(
       includeProfit
         ? [
             line.productName,
+            line.categoryName ?? "",
             String(line.qty),
             String(line.unitPrice),
             String(line.lineTotal),
@@ -71,6 +83,7 @@ export function exportShiftToCsv(
           ]
         : [
             line.productName,
+            line.categoryName ?? "",
             String(line.qty),
             String(line.unitPrice),
             String(line.lineTotal),

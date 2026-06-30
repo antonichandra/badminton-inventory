@@ -6,6 +6,7 @@ import { WaitingApprovalPage } from "./pages/WaitingApproval";
 import { UnexpectedErrorPage } from "./pages/UnexpectedErrorPage";
 import { DashboardPage } from "./pages/Dashboard";
 import { ProdukPage } from "./pages/master/ProdukPage";
+import { KategoriProdukPage } from "./pages/master/categories/KategoriProdukPage";
 import { SupplierPage } from "./pages/master/suppliers/SupplierPage";
 import { RolePage } from "./pages/master/RolePage";
 import { AkunPage } from "./pages/master/AkunPage";
@@ -50,6 +51,7 @@ export const router = createBrowserRouter([
           { path: "analytics", element: <AnalyticsPage /> },
           { path: "stok", element: <InventoryPage /> },
           { path: "master/produk", element: <ProdukPage /> },
+          { path: "master/kategori-produk", element: <KategoriProdukPage /> },
           { path: "master/supplier", element: <SupplierPage /> },
           { path: "master/role", element: <RolePage /> },
           { path: "master/akun", element: <AkunPage /> },

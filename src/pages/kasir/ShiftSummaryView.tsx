@@ -12,11 +12,20 @@ import { showProfitDetail } from "../../core/utils/showProfitDetail";
 import { ExportShiftButton } from "./ExportShiftButton";
 import { ExportShiftPdfButton } from "./ExportShiftPdfButton";
 import { SalesByTierTabs, type PriceTierRow } from "./SalesByTierTabs";
+import { groupByCategory } from "../../core/utils/groupByCategory";
+import {
+  CategoryGroupSection,
+  CategoryGroupsContainer,
+} from "../../core/components/categoryGroup";
 import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
 import {
   KasirTableShell,
   KasirTd,
   KasirTh,
+  kasirCompactTableClass,
+  kasirCompactTheadClass,
+  kasirCompactTbodyClass,
+  kasirCompactTrClass,
   kasirTableClass,
   kasirTbodyClass,
   kasirTheadClass,
@@ -308,6 +317,8 @@ function StockReconTable({
   rows: Array<{
     productId: Id<"products">;
     productName: string;
+    categoryId?: Id<"productCategories">;
+    categoryName?: string;
     openingQty: number;
     receivedQty: number;
     writeOffQty: number;
@@ -321,6 +332,7 @@ function StockReconTable({
   showGrossProfit: boolean;
 }) {
   const { translate } = useLanguage();
+  const rowGroups = groupByCategory(rows);
 
   if (rows.length === 0 && salesByPriceTier.length === 0) {
     return (
@@ -331,48 +343,78 @@ function StockReconTable({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {rows.length > 0 && (
         <>
-          <KasirTableShell>
-            <table className={kasirTableClass}>
-              <thead className={kasirTheadClass}>
-                <tr>
-                  <KasirTh>Produk</KasirTh>
-                  <KasirTh>{translate("kasirOpeningStock")}</KasirTh>
-                  <KasirTh>{translate("kasirReceived")}</KasirTh>
-                  <KasirTh>{translate("kasirWriteOff")}</KasirTh>
-                  <KasirTh>{translate("kasirClosingStock")}</KasirTh>
-                  <KasirTh>{translate("kasirSoldPhysical")}</KasirTh>
-                  <KasirTh>{translate("kasirSoldRecorded")}</KasirTh>
-                  <KasirTh>{translate("kasirOverInput")}</KasirTh>
-                  <KasirTh>{translate("kasirMissInput")}</KasirTh>
-                </tr>
-              </thead>
-              <tbody className={kasirTbodyClass}>
-                {rows.map((row) => (
-                  <tr key={row.productId} className={kasirTrClass}>
-                    <KasirTd className="font-medium text-slate-900 dark:text-white">
-                      {row.productName}
-                    </KasirTd>
-                    <KasirTd>{row.openingQty}</KasirTd>
-                    <KasirTd>{row.receivedQty}</KasirTd>
-                    <KasirTd>{row.writeOffQty}</KasirTd>
-                    <KasirTd>{row.closingQty}</KasirTd>
-                    <KasirTd className="font-medium">{row.soldQtyFromStock}</KasirTd>
-                    <KasirTd>{row.soldQtyFromLines}</KasirTd>
-                    <KasirTd className="text-amber-600 dark:text-amber-400">
-                      {row.overInputQty || "—"}
-                    </KasirTd>
-                    <KasirTd className="text-blue-600 dark:text-blue-400">
-                      {row.missInputQty || "—"}
-                    </KasirTd>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </KasirTableShell>
-          <p className="text-xs text-slate-500">{translate("kasirRentalNote")}</p>
+          <CategoryGroupsContainer>
+            {rowGroups.map((group) => {
+              const totalSold = group.items.reduce(
+                (sum, row) => sum + row.soldQtyFromStock,
+                0,
+              );
+
+              return (
+              <CategoryGroupSection
+                key={group.categoryId ?? group.categoryName}
+                categoryName={group.categoryName}
+                itemCountLabel={translate("categoryItemCount").replace(
+                  "{count}",
+                  String(group.items.length),
+                )}
+                meta={`${totalSold} ${translate("kasirSoldPhysical").toLowerCase()}`}
+              >
+                <table className={kasirCompactTableClass}>
+                  <thead className={kasirCompactTheadClass}>
+                    <tr>
+                      <KasirTh compact>Produk</KasirTh>
+                      <KasirTh compact>{translate("kasirOpeningStock")}</KasirTh>
+                      <KasirTh compact>{translate("kasirReceived")}</KasirTh>
+                      <KasirTh compact>{translate("kasirWriteOff")}</KasirTh>
+                      <KasirTh compact>{translate("kasirClosingStock")}</KasirTh>
+                      <KasirTh compact>{translate("kasirSoldPhysical")}</KasirTh>
+                      <KasirTh compact>{translate("kasirSoldRecorded")}</KasirTh>
+                      <KasirTh compact>{translate("kasirOverInput")}</KasirTh>
+                      <KasirTh compact>{translate("kasirMissInput")}</KasirTh>
+                    </tr>
+                  </thead>
+                  <tbody className={kasirCompactTbodyClass}>
+                    {group.items.map((row) => (
+                      <tr key={row.productId} className={kasirCompactTrClass}>
+                        <KasirTd
+                          compact
+                          className="font-medium text-slate-900 dark:text-white"
+                        >
+                          {row.productName}
+                        </KasirTd>
+                        <KasirTd compact>{row.openingQty}</KasirTd>
+                        <KasirTd compact>{row.receivedQty}</KasirTd>
+                        <KasirTd compact>{row.writeOffQty}</KasirTd>
+                        <KasirTd compact>{row.closingQty}</KasirTd>
+                        <KasirTd compact className="font-medium">
+                          {row.soldQtyFromStock}
+                        </KasirTd>
+                        <KasirTd compact>{row.soldQtyFromLines}</KasirTd>
+                        <KasirTd
+                          compact
+                          className="text-amber-600 dark:text-amber-400"
+                        >
+                          {row.overInputQty || "—"}
+                        </KasirTd>
+                        <KasirTd
+                          compact
+                          className="text-blue-600 dark:text-blue-400"
+                        >
+                          {row.missInputQty || "—"}
+                        </KasirTd>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CategoryGroupSection>
+            );
+            })}
+          </CategoryGroupsContainer>
+          <p className="text-[10px] text-slate-500">{translate("kasirRentalNote")}</p>
         </>
       )}
 

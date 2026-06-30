@@ -1,14 +1,20 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { normalizeGroupKey } from "./groupLabelHelpers";
+import {
+  MISS_INPUT_GROUP_KEY,
+  UNGROUPED_GROUP_KEY,
+  normalizeGroupKey,
+} from "./groupLabelHelpers";
 import {
   formatDateKey,
   getShiftCashSummary,
   getShiftSalesStats,
   getShiftStockReconciliation,
 } from "./shiftHelpers";
-import { resolveSaleLineCogs } from "./inventoryCostHelpers";
+import { resolveSaleLineCogs, getFallbackUnitCost } from "./inventoryCostHelpers";
 import { buildPhysicalSalesByPriceTier, shouldRebuildClosedPhysicalTiers } from "./shiftPhysicalRevenueHelpers";
+import { resolveProductCategory } from "./productCategoryHelpers";
+import { resolveRetailSellPriceAt } from "./productPriceHistoryHelpers";
 
 export const SHIFT_RETENTION_LIMIT = 10;
 
@@ -68,6 +74,338 @@ function isShiftSummaryInRange(
 ): boolean {
   const date = formatDateKey(closedAt);
   return date >= range.startDateKey && date <= range.endDateKey;
+}
+
+function monthKeyFromDateKey(dateKey: string): string {
+  return dateKey.slice(0, 7);
+}
+
+type ProductAggregate = {
+  productId: Id<"products">;
+  productName: string;
+  unit: string;
+  qty: number;
+  revenue: number;
+  cogs: number;
+};
+
+type CategoryAggregate = {
+  categoryId?: Id<"productCategories">;
+  categoryName: string;
+  qty: number;
+  revenue: number;
+  cogs: number;
+};
+
+type ProductAdjustment = {
+  productId: Id<"products">;
+  productName: string;
+  unit: string;
+  qtyDelta: number;
+  revenueDelta: number;
+  cogsDelta: number;
+};
+
+/** Miss/over input deltas for retail — attributed to shift close date. */
+async function computeRetailStockAdjustmentsForSummary(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  summary: Doc<"shiftSummaries">,
+): Promise<ProductAdjustment[]> {
+  const adjustments: ProductAdjustment[] = [];
+  const asOf = summary.closedAt;
+
+  for (const row of summary.stockReconciliation) {
+    if (row.missInputQty <= 0 && row.overInputQty <= 0) continue;
+
+    const product = await ctx.db.get(row.productId);
+    if (!product || product.type !== "RETAIL") continue;
+
+    const unitPrice = await resolveRetailSellPriceAt(
+      ctx,
+      row.productId,
+      businessId,
+      asOf,
+    );
+    const unitCost = await getFallbackUnitCost(ctx, businessId, row.productId);
+
+    let qtyDelta = 0;
+    let revenueDelta = 0;
+    let cogsDelta = 0;
+
+    if (row.missInputQty > 0) {
+      qtyDelta += row.missInputQty;
+      revenueDelta += row.missInputQty * unitPrice;
+      cogsDelta += row.missInputQty * unitCost;
+    }
+    if (row.overInputQty > 0) {
+      qtyDelta -= row.overInputQty;
+      revenueDelta -= row.overInputQty * unitPrice;
+      cogsDelta -= row.overInputQty * unitCost;
+    }
+
+    if (qtyDelta !== 0 || revenueDelta !== 0) {
+      adjustments.push({
+        productId: row.productId,
+        productName: row.productName,
+        unit: product.unit,
+        qtyDelta,
+        revenueDelta,
+        cogsDelta,
+      });
+    }
+  }
+
+  return adjustments;
+}
+
+function applyProductAdjustment(
+  productMap: Map<string, ProductAggregate>,
+  adjustment: ProductAdjustment,
+) {
+  const key = adjustment.productId;
+  const entry = productMap.get(key) ?? {
+    productId: adjustment.productId,
+    productName: adjustment.productName,
+    unit: adjustment.unit,
+    qty: 0,
+    revenue: 0,
+    cogs: 0,
+  };
+  entry.qty += adjustment.qtyDelta;
+  entry.revenue += adjustment.revenueDelta;
+  entry.cogs += adjustment.cogsDelta;
+  if (!entry.unit.trim() && adjustment.unit.trim()) {
+    entry.unit = adjustment.unit;
+  }
+  productMap.set(key, entry);
+}
+
+async function enrichProductAggregateUnits(
+  ctx: QueryCtx | MutationCtx,
+  productMap: Map<string, ProductAggregate>,
+) {
+  await Promise.all(
+    Array.from(productMap.values()).map(async (entry) => {
+      if (entry.unit.trim()) return;
+      const product = await ctx.db.get(entry.productId);
+      entry.unit = product?.unit ?? "";
+    }),
+  );
+}
+
+function formatTopSellingProducts(
+  productMap: Map<string, ProductAggregate>,
+  limit: number,
+) {
+  return Array.from(productMap.values())
+    .filter((product) => product.qty > 0)
+    .map((product) => ({
+      productId: product.productId,
+      productName: product.productName,
+      unit: product.unit,
+      qty: product.qty,
+      unitPrice:
+        product.qty > 0 ? Math.round(product.revenue / product.qty) : 0,
+      revenue: product.revenue,
+      grossProfit: product.revenue - product.cogs,
+    }))
+    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+    .slice(0, limit);
+}
+
+/**
+ * Paid kasir lines by paidAt + miss/over input on shift close date.
+ * Open shifts: recorded sales only. Closed shifts: +miss / −over on closedAt.
+ */
+export async function aggregateDailyRollupsHybrid(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const byDate = new Map<string, { totalRevenue: number; totalCogs: number }>();
+  const unitCostCache = new Map();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const date = formatDateKey(line.paidAt ?? line.createdAt);
+    const entry = byDate.get(date) ?? { totalRevenue: 0, totalCogs: 0 };
+    entry.totalRevenue += line.lineTotal;
+    entry.totalCogs += await resolveSaleLineCogs(
+      ctx,
+      businessId,
+      line,
+      unitCostCache,
+    );
+    byDate.set(date, entry);
+  }
+
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  for (const summary of summaries) {
+    if (!isShiftSummaryInRange(summary.closedAt, range)) continue;
+
+    const closeDate = formatDateKey(summary.closedAt);
+    const adjustments = await computeRetailStockAdjustmentsForSummary(
+      ctx,
+      businessId,
+      summary,
+    );
+
+    let revenueDelta = 0;
+    let cogsDelta = 0;
+    for (const adjustment of adjustments) {
+      revenueDelta += adjustment.revenueDelta;
+      cogsDelta += adjustment.cogsDelta;
+    }
+
+    if (revenueDelta === 0 && cogsDelta === 0) continue;
+
+    const entry = byDate.get(closeDate) ?? { totalRevenue: 0, totalCogs: 0 };
+    entry.totalRevenue += revenueDelta;
+    entry.totalCogs += cogsDelta;
+    byDate.set(closeDate, entry);
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, stats]) => ({
+      businessId,
+      date,
+      totalRevenue: stats.totalRevenue,
+      totalCogs: stats.totalCogs,
+      grossProfit: stats.totalRevenue - stats.totalCogs,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Paid lines in range + stock adjustments for shifts closed in range.
+ */
+export async function aggregateTopSellingProductsHybrid(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const productMap = new Map<string, ProductAggregate>();
+  const unitCostCache = new Map();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const product = await ctx.db.get(line.productId);
+    const key = line.productId;
+    const entry = productMap.get(key) ?? {
+      productId: line.productId,
+      productName: product?.name ?? "—",
+      unit: product?.unit ?? "",
+      qty: 0,
+      revenue: 0,
+      cogs: 0,
+    };
+    entry.qty += line.qty;
+    entry.revenue += line.lineTotal;
+    entry.cogs += await resolveSaleLineCogs(
+      ctx,
+      businessId,
+      line,
+      unitCostCache,
+    );
+    productMap.set(key, entry);
+  }
+
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  for (const summary of summaries) {
+    if (!isShiftSummaryInRange(summary.closedAt, range)) continue;
+
+    const adjustments = await computeRetailStockAdjustmentsForSummary(
+      ctx,
+      businessId,
+      summary,
+    );
+    for (const adjustment of adjustments) {
+      applyProductAdjustment(productMap, adjustment);
+    }
+  }
+
+  await enrichProductAggregateUnits(ctx, productMap);
+  return formatTopSellingProducts(productMap, limit);
+}
+
+/**
+ * Paid lines by paidAt month + stock adjustments by closedAt month.
+ */
+export async function aggregateMonthlyRevenueHybrid(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  thisMonthKey: string,
+  lastMonthKey: string,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  let thisMonth = 0;
+  let lastMonth = 0;
+
+  for (const line of lines) {
+    if (line.paymentStatus !== "PAID") continue;
+    const month = monthKeyFromDateKey(
+      formatDateKey(line.paidAt ?? line.createdAt),
+    );
+    if (month === thisMonthKey) {
+      thisMonth += line.lineTotal;
+    } else if (month === lastMonthKey) {
+      lastMonth += line.lineTotal;
+    }
+  }
+
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  for (const summary of summaries) {
+    const month = monthKeyFromDateKey(formatDateKey(summary.closedAt));
+    if (month !== thisMonthKey && month !== lastMonthKey) continue;
+
+    const adjustments = await computeRetailStockAdjustmentsForSummary(
+      ctx,
+      businessId,
+      summary,
+    );
+    const revenueDelta = adjustments.reduce(
+      (sum, adjustment) => sum + adjustment.revenueDelta,
+      0,
+    );
+
+    if (month === thisMonthKey) {
+      thisMonth += revenueDelta;
+    } else {
+      lastMonth += revenueDelta;
+    }
+  }
+
+  return { thisMonth, lastMonth };
 }
 
 /** Daily revenue/COGS from closed shifts (physical stock source of truth). */
@@ -343,62 +681,90 @@ export async function aggregateTopSellingProductsFromSaleLines(
     .slice(0, limit);
 }
 
-export async function aggregateTopSpendingGroupsFromSaleLines(
-  ctx: QueryCtx | MutationCtx,
-  businessId: Id<"businesses">,
-  range: SaleDateRange,
-  limit = 10,
-) {
-  const lines = await ctx.db
-    .query("saleLines")
-    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
-    .collect();
-
-  const groupMap = new Map<
+type SpendingGroupAggregate = {
+  groupLabel: string;
+  totalSpend: number;
+  products: Map<
     string,
     {
-      groupLabel: string;
-      totalSpend: number;
-      products: Map<
-        string,
-        {
-          productId: Id<"products">;
-          productName: string;
-          qty: number;
-          revenue: number;
-        }
-      >;
+      productId: Id<"products">;
+      productName: string;
+      unit: string;
+      qty: number;
+      revenue: number;
     }
-  >();
+  >;
+  categories: Map<
+    string,
+    {
+      categoryId?: Id<"productCategories">;
+      categoryName: string;
+      qty: number;
+      revenue: number;
+    }
+  >;
+};
 
-  for (const line of lines) {
-    if (!isPaidLineInRange(line, range)) continue;
+function getOrCreateSpendingGroup(
+  groupMap: Map<string, SpendingGroupAggregate>,
+  groupKey: string,
+  groupLabel: string,
+): SpendingGroupAggregate {
+  const existing = groupMap.get(groupKey);
+  if (existing) return existing;
 
-    const rawLabel = line.groupLabel?.trim();
-    if (!rawLabel) continue;
+  const group: SpendingGroupAggregate = {
+    groupLabel,
+    totalSpend: 0,
+    products: new Map(),
+    categories: new Map(),
+  };
+  groupMap.set(groupKey, group);
+  return group;
+}
 
-    const groupKey = normalizeGroupKey(rawLabel);
-    const product = await ctx.db.get(line.productId);
+async function addSpendingToGroup(
+  ctx: QueryCtx | MutationCtx,
+  group: SpendingGroupAggregate,
+  productId: Id<"products">,
+  qty: number,
+  revenue: number,
+) {
+  if (qty <= 0 || revenue <= 0) return;
 
-    const group = groupMap.get(groupKey) ?? {
-      groupLabel: rawLabel,
-      totalSpend: 0,
-      products: new Map(),
-    };
-    group.totalSpend += line.lineTotal;
+  const product = await ctx.db.get(productId);
+  group.totalSpend += revenue;
 
-    const productEntry = group.products.get(line.productId) ?? {
-      productId: line.productId,
-      productName: product?.name ?? "—",
-      qty: 0,
-      revenue: 0,
-    };
-    productEntry.qty += line.qty;
-    productEntry.revenue += line.lineTotal;
-    group.products.set(line.productId, productEntry);
-    groupMap.set(groupKey, group);
-  }
+  const productEntry = group.products.get(productId) ?? {
+    productId,
+    productName: product?.name ?? "—",
+    unit: product?.unit ?? "",
+    qty: 0,
+    revenue: 0,
+  };
+  productEntry.qty += qty;
+  productEntry.revenue += revenue;
+  group.products.set(productId, productEntry);
 
+  const category = product
+    ? await resolveProductCategory(ctx, product)
+    : { categoryName: "—" as const };
+  const categoryKey = category.categoryId ?? "__uncategorized__";
+  const categoryEntry = group.categories.get(categoryKey) ?? {
+    categoryId: category.categoryId,
+    categoryName: category.categoryName,
+    qty: 0,
+    revenue: 0,
+  };
+  categoryEntry.qty += qty;
+  categoryEntry.revenue += revenue;
+  group.categories.set(categoryKey, categoryEntry);
+}
+
+function formatTopSpendingGroups(
+  groupMap: Map<string, SpendingGroupAggregate>,
+  limit: number,
+) {
   return Array.from(groupMap.values())
     .map((group) => ({
       groupLabel: group.groupLabel,
@@ -410,9 +776,259 @@ export async function aggregateTopSpendingGroupsFromSaleLines(
             product.qty > 0 ? Math.round(product.revenue / product.qty) : 0,
         }))
         .sort((a, b) => b.revenue - a.revenue || b.qty - a.qty),
+      categories: Array.from(group.categories.values())
+        .map((category) => ({
+          ...category,
+          unitPrice:
+            category.qty > 0 ? Math.round(category.revenue / category.qty) : 0,
+        }))
+        .sort((a, b) => b.revenue - a.revenue || b.qty - a.qty),
     }))
     .sort((a, b) => b.totalSpend - a.totalSpend)
     .slice(0, limit);
+}
+
+export async function aggregateTopSpendingGroupsFromSaleLines(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const groupMap = new Map<string, SpendingGroupAggregate>();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const rawLabel = line.groupLabel?.trim();
+    const groupKey = rawLabel ? normalizeGroupKey(rawLabel) : UNGROUPED_GROUP_KEY;
+    const groupLabel = rawLabel ?? UNGROUPED_GROUP_KEY;
+    const group = getOrCreateSpendingGroup(groupMap, groupKey, groupLabel);
+    await addSpendingToGroup(
+      ctx,
+      group,
+      line.productId,
+      line.qty,
+      line.lineTotal,
+    );
+  }
+
+  return formatTopSpendingGroups(groupMap, limit);
+}
+
+/**
+ * Paid lines in range (ungrouped → virtual bucket) + miss input on shift close date.
+ */
+export async function aggregateTopSpendingGroupsHybrid(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const groupMap = new Map<string, SpendingGroupAggregate>();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const rawLabel = line.groupLabel?.trim();
+    const groupKey = rawLabel ? normalizeGroupKey(rawLabel) : UNGROUPED_GROUP_KEY;
+    const groupLabel = rawLabel ?? UNGROUPED_GROUP_KEY;
+    const group = getOrCreateSpendingGroup(groupMap, groupKey, groupLabel);
+    await addSpendingToGroup(
+      ctx,
+      group,
+      line.productId,
+      line.qty,
+      line.lineTotal,
+    );
+  }
+
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  for (const summary of summaries) {
+    if (!isShiftSummaryInRange(summary.closedAt, range)) continue;
+
+    const asOf = summary.closedAt;
+    for (const row of summary.stockReconciliation) {
+      if (row.missInputQty <= 0) continue;
+
+      const product = await ctx.db.get(row.productId);
+      if (!product || product.type !== "RETAIL") continue;
+
+      const unitPrice = await resolveRetailSellPriceAt(
+        ctx,
+        row.productId,
+        businessId,
+        asOf,
+      );
+      const revenue = row.missInputQty * unitPrice;
+      const group = getOrCreateSpendingGroup(
+        groupMap,
+        MISS_INPUT_GROUP_KEY,
+        MISS_INPUT_GROUP_KEY,
+      );
+      await addSpendingToGroup(
+        ctx,
+        group,
+        row.productId,
+        row.missInputQty,
+        revenue,
+      );
+    }
+  }
+
+  return formatTopSpendingGroups(groupMap, limit);
+}
+
+export async function aggregateTopSellingCategoriesFromSaleLines(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const categoryMap = new Map<string, CategoryAggregate>();
+  const unitCostCache = new Map();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const product = await ctx.db.get(line.productId);
+    const category = product
+      ? await resolveProductCategory(ctx, product)
+      : { categoryName: "—" as const };
+    const key = category.categoryId ?? "__uncategorized__";
+    const cogs = await resolveSaleLineCogs(
+      ctx,
+      businessId,
+      line,
+      unitCostCache,
+    );
+    addCategoryAggregate(categoryMap, key, category, line.qty, line.lineTotal, cogs);
+  }
+
+  return formatTopSellingCategories(categoryMap, limit);
+}
+
+function addCategoryAggregate(
+  categoryMap: Map<string, CategoryAggregate>,
+  key: string,
+  category: { categoryId?: Id<"productCategories">; categoryName: string },
+  qty: number,
+  revenue: number,
+  cogs: number,
+) {
+  const entry = categoryMap.get(key) ?? {
+    categoryId: category.categoryId,
+    categoryName: category.categoryName,
+    qty: 0,
+    revenue: 0,
+    cogs: 0,
+  };
+  entry.qty += qty;
+  entry.revenue += revenue;
+  entry.cogs += cogs;
+  categoryMap.set(key, entry);
+}
+
+function formatTopSellingCategories(
+  categoryMap: Map<string, CategoryAggregate>,
+  limit: number,
+) {
+  return Array.from(categoryMap.values())
+    .filter((category) => category.qty > 0)
+    .map((category) => ({
+      categoryId: category.categoryId,
+      categoryName: category.categoryName,
+      qty: category.qty,
+      revenue: category.revenue,
+      grossProfit: category.revenue - category.cogs,
+    }))
+    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+    .slice(0, limit);
+}
+
+/**
+ * Paid lines in range + stock adjustments for shifts closed in range.
+ */
+export async function aggregateTopSellingCategoriesHybrid(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  range: SaleDateRange,
+  limit = 10,
+) {
+  const lines = await ctx.db
+    .query("saleLines")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  const categoryMap = new Map<string, CategoryAggregate>();
+  const unitCostCache = new Map();
+
+  for (const line of lines) {
+    if (!isPaidLineInRange(line, range)) continue;
+
+    const product = await ctx.db.get(line.productId);
+    const category = product
+      ? await resolveProductCategory(ctx, product)
+      : { categoryName: "—" as const };
+    const key = category.categoryId ?? "__uncategorized__";
+    const cogs = await resolveSaleLineCogs(
+      ctx,
+      businessId,
+      line,
+      unitCostCache,
+    );
+    addCategoryAggregate(categoryMap, key, category, line.qty, line.lineTotal, cogs);
+  }
+
+  const summaries = await ctx.db
+    .query("shiftSummaries")
+    .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+    .collect();
+
+  for (const summary of summaries) {
+    if (!isShiftSummaryInRange(summary.closedAt, range)) continue;
+
+    const adjustments = await computeRetailStockAdjustmentsForSummary(
+      ctx,
+      businessId,
+      summary,
+    );
+    for (const adjustment of adjustments) {
+      const product = await ctx.db.get(adjustment.productId);
+      const category = product
+        ? await resolveProductCategory(ctx, product)
+        : { categoryName: "—" as const };
+      const key = category.categoryId ?? "__uncategorized__";
+      addCategoryAggregate(
+        categoryMap,
+        key,
+        category,
+        adjustment.qtyDelta,
+        adjustment.revenueDelta,
+        adjustment.cogsDelta,
+      );
+    }
+  }
+
+  return formatTopSellingCategories(categoryMap, limit);
 }
 
 export async function buildAndSaveShiftSummary(

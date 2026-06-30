@@ -9,6 +9,7 @@ import { InputNumber } from "../../core/components/forms/InputNumber";
 import { InputText } from "../../core/components/forms/InputText";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
+import { cn } from "../../core/utils/cn";
 import { formatRupiah } from "./utils";
 
 interface StockReceiptSheetProps {
@@ -18,6 +19,8 @@ interface StockReceiptSheetProps {
   businessId: Id<"businesses">;
   onBack?: () => void;
 }
+
+type ReceiptInputMode = "pack" | "unit";
 
 export function StockReceiptSheet({
   open,
@@ -49,6 +52,9 @@ export function StockReceiptSheet({
   const [packPriceByProduct, setPackPriceByProduct] = useState<
     Record<string, string>
   >({});
+  const [inputModeByProduct, setInputModeByProduct] = useState<
+    Record<string, ReceiptInputMode>
+  >({});
   const [expiryByProduct, setExpiryByProduct] = useState<
     Record<string, string>
   >({});
@@ -66,13 +72,13 @@ export function StockReceiptSheet({
   );
 
   const products = supplierProducts?.products ?? [];
-  const hasProductLinks = supplierProducts?.hasProductLinks ?? false;
 
   const clearProductInputs = () => {
     setQtyByProduct({});
     setCostByProduct({});
     setPackQtyByProduct({});
     setPackPriceByProduct({});
+    setInputModeByProduct({});
     setExpiryByProduct({});
     setProductSearch("");
   };
@@ -91,6 +97,17 @@ export function StockReceiptSheet({
     [suppliers],
   );
 
+  const selectedSupplierName = useMemo(
+    () => supplierOptions.find((option) => option.value === supplierId)?.label ?? "",
+    [supplierOptions, supplierId],
+  );
+
+  const noLinkedProductsMessage = useMemo(
+    () =>
+      translate("kasirNoLinkedProducts").replace("{name}", selectedSupplierName),
+    [translate, selectedSupplierName],
+  );
+
   const productRows = useMemo(() => {
     const term = productSearch.trim().toLowerCase();
     if (!term) return products;
@@ -101,38 +118,60 @@ export function StockReceiptSheet({
 
   type ReceiptProduct = (typeof products)[number];
 
+  const hasPackConfig = (product: ReceiptProduct) =>
+    product.unitsPerPurchaseUnit != null &&
+    product.unitsPerPurchaseUnit >= 1 &&
+    (product.purchaseUnit?.trim() ?? "") !== "";
+
+  const getInputMode = (
+    product: ReceiptProduct,
+  ): ReceiptInputMode => {
+    if (!hasPackConfig(product)) return "unit";
+    return inputModeByProduct[product._id] ?? "pack";
+  };
+
   const resolveItem = (product: ReceiptProduct) => {
-    const packSize = product.unitsPerPurchaseUnit;
-    if (packSize && packSize >= 1) {
+    const packSize = product.unitsPerPurchaseUnit ?? 0;
+    const mode = getInputMode(product);
+
+    if (hasPackConfig(product) && mode === "pack") {
       const packQty = Number(packQtyByProduct[product._id] ?? "0") || 0;
       const packPrice = Number(packPriceByProduct[product._id] ?? "0") || 0;
       return {
         productId: product._id as Id<"products">,
         qty: packQty * packSize,
-        unitCost: packQty > 0 ? packPrice / packSize : 0,
+        unitCost: packPrice > 0 ? packPrice / packSize : undefined,
         packQty,
         packPrice,
         packSize,
+        mode,
         trackExpiry: product.trackExpiry ?? false,
       };
     }
 
+    const qty = Number(qtyByProduct[product._id] ?? "0") || 0;
+    const unitCost = Number(costByProduct[product._id] ?? "0") || 0;
     return {
       productId: product._id as Id<"products">,
-      qty: Number(qtyByProduct[product._id] ?? "0") || 0,
-      unitCost: Number(costByProduct[product._id] ?? "0") || 0,
+      qty,
+      unitCost: unitCost > 0 ? unitCost : undefined,
       packQty: 0,
       packPrice: 0,
-      packSize: undefined as number | undefined,
+      packSize,
+      mode: "unit" as const,
       trackExpiry: product.trackExpiry ?? false,
     };
   };
 
+  const resolveFallbackUnitCost = (product: ReceiptProduct) =>
+    product.lastSupplierUnitCost ??
+    product.defaultUnitCost ??
+    null;
+
   const handleSubmit = async () => {
     if (!supplierId) return;
 
-    const allProducts = products;
-    const items = allProducts
+    const items = products
       .map((product) => {
         const resolved = resolveItem(product);
         return {
@@ -147,10 +186,21 @@ export function StockReceiptSheet({
     if (items.length === 0) return;
 
     for (const item of items) {
-      if (item.unitCost <= 0) {
-        showToast({ type: "error", message: translate("kasirUnitCostRequired") });
+      const product = products.find((p) => p._id === item.productId);
+      if (!product) continue;
+
+      if (
+        hasPackConfig(product) &&
+        item.mode === "pack" &&
+        !Number.isInteger(item.packQty)
+      ) {
+        showToast({
+          type: "error",
+          message: translate("kasirReceiptPackQtyInteger"),
+        });
         return;
       }
+
       if (item.trackExpiry && !item.expiresAt) {
         showToast({ type: "error", message: translate("kasirExpiryRequired") });
         return;
@@ -167,7 +217,14 @@ export function StockReceiptSheet({
           ? new Date(`${dueDate}T00:00:00`).getTime()
           : undefined,
         items: items.map(
-          ({ trackExpiry: _, packQty, packPrice, packSize, ...item }) => item,
+          ({
+            trackExpiry: _,
+            packQty,
+            packPrice,
+            packSize,
+            mode,
+            ...item
+          }) => item,
         ),
       });
       showToast({
@@ -178,6 +235,7 @@ export function StockReceiptSheet({
       setCostByProduct({});
       setPackQtyByProduct({});
       setPackPriceByProduct({});
+      setInputModeByProduct({});
       setExpiryByProduct({});
       setNote("");
       setProductSearch("");
@@ -187,10 +245,12 @@ export function StockReceiptSheet({
     } catch (error) {
       console.error(error);
       const message =
-        error instanceof Error &&
-        error.message === "PRODUCT_NOT_LINKED_TO_SUPPLIER"
-          ? translate("kasirNoLinkedProducts")
-          : translate("unexpectedError");
+        error instanceof Error && error.message === "UNIT_COST_UNAVAILABLE"
+          ? translate("kasirUnitCostRequired")
+          : error instanceof Error &&
+              error.message === "PRODUCT_NOT_LINKED_TO_SUPPLIER"
+            ? noLinkedProductsMessage
+            : translate("unexpectedError");
       showToast({ type: "error", message });
     } finally {
       setIsSaving(false);
@@ -232,7 +292,7 @@ export function StockReceiptSheet({
               {translate("kasirReceiptInfoSection")}
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              {translate("kasirReceiptCostHint")}
+              {translate("kasirReceiptPriceOptional")}
             </p>
           </div>
           <Dropdown
@@ -282,9 +342,13 @@ export function StockReceiptSheet({
               <p className="text-center text-sm text-slate-500">
                 {translate("kasirSelectSupplierFirst")}
               </p>
-            ) : hasProductLinks && products.length === 0 ? (
+            ) : supplierProducts === undefined ? (
               <p className="text-center text-sm text-slate-500">
-                {translate("kasirNoLinkedProducts")}
+                {translate("loading")}
+              </p>
+            ) : products.length === 0 ? (
+              <p className="text-center text-sm text-slate-500">
+                {noLinkedProductsMessage}
               </p>
             ) : productRows.length === 0 ? (
               <p className="text-center text-sm text-slate-500">
@@ -292,13 +356,32 @@ export function StockReceiptSheet({
               </p>
             ) : (
               productRows.map((product) => {
-                const packSize = product.unitsPerPurchaseUnit;
-                const usesPack = packSize != null && packSize >= 1;
-                const packQty = Number(packQtyByProduct[product._id] ?? "0") || 0;
+                const packConfigured = hasPackConfig(product);
+                const mode = getInputMode(product);
+                const packSize = product.unitsPerPurchaseUnit ?? 0;
+                const purchaseUnit = product.purchaseUnit ?? "";
+                const packQty =
+                  Number(packQtyByProduct[product._id] ?? "0") || 0;
                 const packPrice =
                   Number(packPriceByProduct[product._id] ?? "0") || 0;
-                const unitCost = usesPack && packQty > 0 ? packPrice / packSize : 0;
-                const totalQty = usesPack ? packQty * packSize : 0;
+                const unitQty = Number(qtyByProduct[product._id] ?? "0") || 0;
+                const unitPrice =
+                  Number(costByProduct[product._id] ?? "0") || 0;
+                const fallback = resolveFallbackUnitCost(product);
+
+                const stockQty =
+                  packConfigured && mode === "pack"
+                    ? packQty * packSize
+                    : unitQty;
+
+                const effectiveUnitCost =
+                  packConfigured && mode === "pack"
+                    ? packPrice > 0
+                      ? packPrice / packSize
+                      : fallback
+                    : unitPrice > 0
+                      ? unitPrice
+                      : fallback;
 
                 return (
                   <div
@@ -308,54 +391,97 @@ export function StockReceiptSheet({
                     <p className="text-sm font-medium text-slate-900 dark:text-white">
                       {product.name}
                     </p>
-                    {usesPack ? (
-                      <>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          <InputNumber
-                            label={translate("kasirPackQty")}
-                            value={packQtyByProduct[product._id] ?? ""}
-                            onChange={(v) =>
-                              setPackQtyByProduct((prev) => ({
+
+                    {packConfigured && (
+                      <div className="mt-2 flex gap-1">
+                        {(["pack", "unit"] as const).map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() =>
+                              setInputModeByProduct((prev) => ({
                                 ...prev,
-                                [product._id]: v,
+                                [product._id]: option,
                               }))
                             }
-                            min={0}
-                          />
-                          <InputNumber
-                            label={translate("kasirPackPrice")}
-                            value={packPriceByProduct[product._id] ?? ""}
-                            onChange={(v) =>
-                              setPackPriceByProduct((prev) => ({
-                                ...prev,
-                                [product._id]: v,
-                              }))
-                            }
-                            min={0}
-                            format="currency"
-                          />
-                        </div>
-                        {packQty > 0 && packPrice > 0 && (
-                          <p className="mt-2 text-xs text-slate-500">
-                            {translate("kasirPackPreview")
-                              .replace("{totalQty}", String(totalQty))
-                              .replace("{unit}", product.unit)
-                              .replace("{unitCost}", formatRupiah(unitCost))}
-                          </p>
-                        )}
-                      </>
+                            className={cn(
+                              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                              mode === option
+                                ? "bg-emerald-600 text-white"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300",
+                            )}
+                          >
+                            {option === "pack"
+                              ? translate("kasirReceiptModePack").replace(
+                                  "{unit}",
+                                  purchaseUnit,
+                                )
+                              : translate("kasirReceiptModeUnit").replace(
+                                  "{unit}",
+                                  product.unit,
+                                )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {packConfigured && mode === "pack" && (
+                      <p className="mt-2 text-[11px] text-slate-500">
+                        {translate("kasirPackSizeInfo")
+                          .replace("{purchaseUnit}", purchaseUnit)
+                          .replace("{count}", String(packSize))
+                          .replace("{unit}", product.unit)}
+                      </p>
+                    )}
+
+                    {packConfigured && mode === "pack" ? (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <InputNumber
+                          label={translate("kasirPackQty")}
+                          value={packQtyByProduct[product._id] ?? ""}
+                          onChange={(v) =>
+                            setPackQtyByProduct((prev) => ({
+                              ...prev,
+                              [product._id]: v,
+                            }))
+                          }
+                          min={0}
+                          step={1}
+                        />
+                        <InputNumber
+                          label={translate("kasirReceiptPricePerPack").replace(
+                            "{unit}",
+                            purchaseUnit,
+                          )}
+                          value={packPriceByProduct[product._id] ?? ""}
+                          onChange={(v) =>
+                            setPackPriceByProduct((prev) => ({
+                              ...prev,
+                              [product._id]: v,
+                            }))
+                          }
+                          min={0}
+                          format="currency"
+                        />
+                      </div>
                     ) : (
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <InputNumber
                           label={translate("kasirQty")}
                           value={qtyByProduct[product._id] ?? ""}
                           onChange={(v) =>
-                            setQtyByProduct((prev) => ({ ...prev, [product._id]: v }))
+                            setQtyByProduct((prev) => ({
+                              ...prev,
+                              [product._id]: v,
+                            }))
                           }
                           min={0}
                         />
                         <InputNumber
-                          label={translate("kasirUnitCost")}
+                          label={translate("kasirReceiptPricePerUnit").replace(
+                            "{unit}",
+                            product.unit,
+                          )}
                           value={costByProduct[product._id] ?? ""}
                           onChange={(v) =>
                             setCostByProduct((prev) => ({
@@ -368,6 +494,35 @@ export function StockReceiptSheet({
                         />
                       </div>
                     )}
+
+                    {stockQty > 0 && (
+                      <div className="mt-2 space-y-0.5 text-xs text-slate-500">
+                        <p>
+                          {translate("kasirReceiptStockPreview")
+                            .replace("{qty}", String(stockQty))
+                            .replace("{unit}", product.unit)}
+                        </p>
+                        {effectiveUnitCost != null && effectiveUnitCost > 0 && (
+                          <p>
+                            {packPrice <= 0 && unitPrice <= 0
+                              ? translate("kasirReceiptEstimatedCost")
+                                  .replace(
+                                    "{price}",
+                                    formatRupiah(effectiveUnitCost),
+                                  )
+                                  .replace("{unit}", product.unit)
+                              : translate("kasirPackPreview")
+                                  .replace("{totalQty}", String(stockQty))
+                                  .replace("{unit}", product.unit)
+                                  .replace(
+                                    "{unitCost}",
+                                    formatRupiah(effectiveUnitCost),
+                                  )}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {product.trackExpiry && (
                       <div className="mt-2">
                         <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">

@@ -6,9 +6,13 @@ import {
   resolveScopedBusinessId,
 } from "./lib/businessContext";
 import { assertAcl, getAuthenticatedUser, hasAcl } from "./lib/rbac";
-import { getActiveUnitCostForProduct } from "./lib/inventoryCostHelpers";
+import { getActiveUnitCostForProduct, getLatestSupplierUnitCost } from "./lib/inventoryCostHelpers";
 import { recordProductPriceChange } from "./lib/productPriceHistoryHelpers";
 import { getLinkedProductIdsForSupplier } from "./lib/supplierProductHelpers";
+import {
+  resolveProductCategory,
+  validateCategoryForBusiness,
+} from "./lib/productCategoryHelpers";
 
 const productStatus = v.union(v.literal("ACTIVE"), v.literal("INACTIVE"));
 const productTypeFilter = v.union(v.literal("RETAIL"), v.literal("RENTAL"));
@@ -26,6 +30,8 @@ export const listProducts = query({
     types: v.optional(v.array(productTypeFilter)),
     statuses: v.optional(v.array(productStatus)),
     trackExpiry: v.optional(v.array(productTrackExpiryFilter)),
+    categoryIds: v.optional(v.array(v.id("productCategories"))),
+    uncategorized: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     try {
@@ -53,6 +59,7 @@ export const listProducts = query({
       const typeFilter = args.types ?? [];
       const statusFilter = args.statuses ?? [];
       const trackExpiryFilter = args.trackExpiry ?? [];
+      const categoryFilter = args.categoryIds ?? [];
 
       const filtered = products
         .filter((product) => {
@@ -76,6 +83,17 @@ export const listProducts = query({
             const matchesNotTracked =
               trackExpiryFilter.includes("NOT_TRACKED") && !tracked;
             if (!matchesTracked && !matchesNotTracked) {
+              return false;
+            }
+          }
+
+          if (categoryFilter.length > 0 || args.uncategorized) {
+            const isUncategorized = !product.categoryId;
+            const matchesUncategorized = args.uncategorized === true && isUncategorized;
+            const matchesCategory =
+              product.categoryId !== undefined &&
+              categoryFilter.includes(product.categoryId);
+            if (!matchesUncategorized && !matchesCategory) {
               return false;
             }
           }
@@ -107,7 +125,8 @@ export const listProducts = query({
           margin =
             unitCost !== null ? product.sellPrice - unitCost : null;
         }
-        enriched.push({ ...product, unitCost, margin });
+        const category = await resolveProductCategory(ctx, product);
+        enriched.push({ ...product, ...category, unitCost, margin });
       }
       return enriched;
     } catch (error) {
@@ -190,17 +209,25 @@ export const listRetailProductsForShift = query({
         .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
         .collect();
 
-      return products
-        .filter((product) => product.isActive && product.type === "RETAIL")
-        .map((product) => ({
-          _id: product._id,
-          name: product.name,
-          unit: product.unit,
-          trackExpiry: product.trackExpiry ?? false,
-          defaultUnitCost: product.defaultUnitCost,
-          unitsPerPurchaseUnit: product.unitsPerPurchaseUnit,
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const resolved = await Promise.all(
+        products
+          .filter((product) => product.isActive && product.type === "RETAIL")
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(async (product) => {
+            const category = await resolveProductCategory(ctx, product);
+            return {
+              _id: product._id,
+              name: product.name,
+              unit: product.unit,
+              trackExpiry: product.trackExpiry ?? false,
+              defaultUnitCost: product.defaultUnitCost,
+              unitsPerPurchaseUnit: product.unitsPerPurchaseUnit,
+              categoryId: category.categoryId,
+              categoryName: category.categoryName,
+            };
+          }),
+      );
+      return resolved;
     } catch (error) {
       console.error("listRetailProductsForShift failed:", error);
       return [];
@@ -236,23 +263,6 @@ export const listRetailProductsForSupplier = query({
         return { products: [], hasProductLinks: false };
       }
 
-      const products = await ctx.db
-        .query("products")
-        .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
-        .collect();
-
-      const retailProducts = products
-        .filter((product) => product.isActive && product.type === "RETAIL")
-        .map((product) => ({
-          _id: product._id,
-          name: product.name,
-          unit: product.unit,
-          trackExpiry: product.trackExpiry ?? false,
-          defaultUnitCost: product.defaultUnitCost,
-          unitsPerPurchaseUnit: product.unitsPerPurchaseUnit,
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-
       const linkedProductIds = await getLinkedProductIdsForSupplier(
         ctx,
         businessId,
@@ -260,12 +270,46 @@ export const listRetailProductsForSupplier = query({
       );
 
       if (linkedProductIds === null) {
-        return { products: retailProducts, hasProductLinks: false };
+        return { products: [], hasProductLinks: false };
       }
 
       const linkedSet = new Set(linkedProductIds);
+      const products = await ctx.db
+        .query("products")
+        .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+        .collect();
+
+      const retailProducts = await Promise.all(
+        products
+          .filter(
+            (product) =>
+              product.isActive &&
+              product.type === "RETAIL" &&
+              linkedSet.has(product._id),
+          )
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(async (product) => {
+            const lastSupplierUnitCost = await getLatestSupplierUnitCost(
+              ctx,
+              businessId,
+              product._id,
+              args.supplierId,
+            );
+            return {
+              _id: product._id,
+              name: product.name,
+              unit: product.unit,
+              purchaseUnit: product.purchaseUnit,
+              trackExpiry: product.trackExpiry ?? false,
+              defaultUnitCost: product.defaultUnitCost,
+              unitsPerPurchaseUnit: product.unitsPerPurchaseUnit,
+              lastSupplierUnitCost,
+            };
+          }),
+      );
+
       return {
-        products: retailProducts.filter((product) => linkedSet.has(product._id)),
+        products: retailProducts,
         hasProductLinks: true,
       };
     } catch (error) {
@@ -302,9 +346,16 @@ export const listActiveProductsForKasir = query({
         .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
         .collect();
 
-      return products
+      const activeProducts = products
         .filter((product) => product.isActive)
         .sort((a, b) => a.name.localeCompare(b.name));
+
+      return Promise.all(
+        activeProducts.map(async (product) => {
+          const category = await resolveProductCategory(ctx, product);
+          return { ...product, ...category };
+        }),
+      );
     } catch (error) {
       console.error("listActiveProductsForKasir failed:", error);
       return [];
@@ -316,6 +367,7 @@ function validateRetailCostFields(
   type: "RETAIL" | "RENTAL",
   defaultUnitCost?: number,
   unitsPerPurchaseUnit?: number,
+  purchaseUnit?: string,
 ) {
   if (type !== "RETAIL") {
     return;
@@ -323,12 +375,36 @@ function validateRetailCostFields(
   if (defaultUnitCost !== undefined && defaultUnitCost < 0) {
     throw new Error("INVALID_UNIT_COST");
   }
-  if (
-    unitsPerPurchaseUnit !== undefined &&
-    unitsPerPurchaseUnit < 1
-  ) {
+  if (unitsPerPurchaseUnit !== undefined && unitsPerPurchaseUnit < 1) {
     throw new Error("INVALID_PACK_SIZE");
   }
+
+  const hasPackSize =
+    unitsPerPurchaseUnit !== undefined && unitsPerPurchaseUnit >= 1;
+  const hasPurchaseUnit = (purchaseUnit?.trim() ?? "") !== "";
+
+  if (hasPackSize && !hasPurchaseUnit) {
+    throw new Error("PURCHASE_UNIT_REQUIRED");
+  }
+  if (hasPurchaseUnit && !hasPackSize) {
+    throw new Error("INVALID_PACK_SIZE");
+  }
+}
+
+function normalizePurchaseFields(
+  type: "RETAIL" | "RENTAL",
+  unitsPerPurchaseUnit?: number,
+  purchaseUnit?: string,
+) {
+  if (type !== "RETAIL") {
+    return { unitsPerPurchaseUnit: undefined, purchaseUnit: undefined };
+  }
+  const packSize =
+    unitsPerPurchaseUnit !== undefined && unitsPerPurchaseUnit >= 1
+      ? unitsPerPurchaseUnit
+      : undefined;
+  const packUnit = packSize ? purchaseUnit?.trim() || undefined : undefined;
+  return { unitsPerPurchaseUnit: packSize, purchaseUnit: packUnit };
 }
 
 export const createProduct = mutation({
@@ -342,6 +418,8 @@ export const createProduct = mutation({
     trackExpiry: v.optional(v.boolean()),
     defaultUnitCost: v.optional(v.number()),
     unitsPerPurchaseUnit: v.optional(v.number()),
+    purchaseUnit: v.optional(v.string()),
+    categoryId: v.optional(v.id("productCategories")),
   },
   handler: async (ctx, args) => {
     const { user, role, activeBusinessId } = await requireMasterBusinessContext(
@@ -356,10 +434,25 @@ export const createProduct = mutation({
       throw new Error("INVALID_INPUT");
     }
 
+    if (args.categoryId) {
+      await validateCategoryForBusiness(
+        ctx,
+        activeBusinessId,
+        args.categoryId,
+      );
+    }
+
+    const packFields = normalizePurchaseFields(
+      args.type,
+      args.unitsPerPurchaseUnit,
+      args.purchaseUnit,
+    );
+
     validateRetailCostFields(
       args.type,
       args.defaultUnitCost,
-      args.unitsPerPurchaseUnit,
+      packFields.unitsPerPurchaseUnit,
+      packFields.purchaseUnit,
     );
 
     if (args.type === "RENTAL" && (args.rentalPricePerHour ?? 0) <= 0) {
@@ -376,6 +469,7 @@ export const createProduct = mutation({
       businessId: activeBusinessId,
       name,
       type: args.type,
+      categoryId: args.categoryId,
       sellPrice,
       rentalPricePerHour:
         args.type === "RENTAL" ? args.rentalPricePerHour : undefined,
@@ -383,8 +477,8 @@ export const createProduct = mutation({
       trackExpiry: args.type === "RETAIL" ? (args.trackExpiry ?? false) : false,
       defaultUnitCost:
         args.type === "RETAIL" ? args.defaultUnitCost : undefined,
-      unitsPerPurchaseUnit:
-        args.type === "RETAIL" ? args.unitsPerPurchaseUnit : undefined,
+      unitsPerPurchaseUnit: packFields.unitsPerPurchaseUnit,
+      purchaseUnit: packFields.purchaseUnit,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -431,7 +525,9 @@ export const updateProduct = mutation({
     trackExpiry: v.optional(v.boolean()),
     defaultUnitCost: v.optional(v.number()),
     unitsPerPurchaseUnit: v.optional(v.number()),
+    purchaseUnit: v.optional(v.string()),
     isActive: v.boolean(),
+    categoryId: v.optional(v.id("productCategories")),
   },
   handler: async (ctx, args) => {
     const { user, role, activeBusinessId } = await requireMasterBusinessContext(
@@ -452,10 +548,25 @@ export const updateProduct = mutation({
       throw new Error("INVALID_INPUT");
     }
 
+    if (args.categoryId) {
+      await validateCategoryForBusiness(
+        ctx,
+        activeBusinessId,
+        args.categoryId,
+      );
+    }
+
+    const packFields = normalizePurchaseFields(
+      args.type,
+      args.unitsPerPurchaseUnit,
+      args.purchaseUnit,
+    );
+
     validateRetailCostFields(
       args.type,
       args.defaultUnitCost,
-      args.unitsPerPurchaseUnit,
+      packFields.unitsPerPurchaseUnit,
+      packFields.purchaseUnit,
     );
 
     const now = Date.now();
@@ -492,6 +603,7 @@ export const updateProduct = mutation({
     await ctx.db.patch(args.productId, {
       name,
       type: args.type,
+      categoryId: args.categoryId,
       sellPrice: newSellPrice,
       rentalPricePerHour:
         args.type === "RENTAL" ? args.rentalPricePerHour : undefined,
@@ -500,8 +612,8 @@ export const updateProduct = mutation({
         args.type === "RETAIL" ? (args.trackExpiry ?? false) : false,
       defaultUnitCost:
         args.type === "RETAIL" ? args.defaultUnitCost : undefined,
-      unitsPerPurchaseUnit:
-        args.type === "RETAIL" ? args.unitsPerPurchaseUnit : undefined,
+      unitsPerPurchaseUnit: packFields.unitsPerPurchaseUnit,
+      purchaseUnit: packFields.purchaseUnit,
       isActive: args.isActive,
       updatedAt: now,
     });

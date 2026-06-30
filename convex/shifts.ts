@@ -25,6 +25,7 @@ import {
   isAdmin,
   isSuperAdmin,
 } from "./lib/rbac";
+import { resolveReceiptUnitCost } from "./lib/inventoryCostHelpers";
 import {
   buildPhysicalSalesByPriceTier,
   computeClosePreview,
@@ -57,6 +58,7 @@ import {
   resolveShiftAssignees,
   sumStockMovementsByProduct,
 } from "./lib/shiftHelpers";
+import { resolveProductCategory } from "./lib/productCategoryHelpers";
 
 const openingStockItem = v.object({
   productId: v.id("products"),
@@ -71,7 +73,7 @@ const closingStockItem = v.object({
 const receiptItem = v.object({
   productId: v.id("products"),
   qty: v.number(),
-  unitCost: v.number(),
+  unitCost: v.optional(v.number()),
   expiresAt: v.optional(v.number()),
 });
 
@@ -306,6 +308,7 @@ export const getShiftStockContext = query({
         productId: snapshot.productId,
         productName: product.name,
         unit: product.unit,
+        ...(await resolveProductCategory(ctx, product)),
         openingQty: snapshot.openingQty,
         receivedQty: received,
         writeOffQty: writeOff,
@@ -383,6 +386,8 @@ export const getShiftLiveStats = query({
           .map((tier) => ({
             productId: tier.productId,
             productName: tier.productName,
+            categoryId: tier.categoryId,
+            categoryName: tier.categoryName,
             qty: tier.qty,
             revenue: tier.revenue,
             ...(showProfitDetail
@@ -794,8 +799,12 @@ export const getShiftExportData = query({
     const enrichedLines = [];
     for (const line of lines) {
       const product = await ctx.db.get(line.productId);
+      const category = product
+        ? await resolveProductCategory(ctx, product)
+        : { categoryName: "—" as const };
       enrichedLines.push({
         productName: product?.name ?? "—",
+        categoryName: category.categoryName,
         qty: line.qty,
         unitPrice: line.unitPrice,
         lineTotal: line.lineTotal,
@@ -890,6 +899,19 @@ export const openShift = mutation({
 
     if (args.openingCash < 0) {
       throw new Error("INVALID_CASH");
+    }
+
+    const retailProducts = await ctx.db
+      .query("products")
+      .withIndex("by_businessId", (q) =>
+        q.eq("businessId", context.activeBusinessId!),
+      )
+      .collect();
+    const activeRetailCount = retailProducts.filter(
+      (product) => product.isActive && product.type === "RETAIL",
+    ).length;
+    if (activeRetailCount === 0) {
+      throw new Error("NO_RETAIL_PRODUCTS");
     }
 
     const now = Date.now();
@@ -1304,7 +1326,7 @@ export const addStockReceipt = mutation({
       ) {
         throw new Error("PRODUCT_NOT_FOUND");
       }
-      if (item.unitCost < 0) {
+      if (item.unitCost != null && item.unitCost < 0) {
         throw new Error("INVALID_UNIT_COST");
       }
       if (product.trackExpiry && !item.expiresAt) {
@@ -1319,7 +1341,19 @@ export const addStockReceipt = mutation({
       validItems.map((item) => item.productId),
     );
 
-    const totalAmount = validItems.reduce(
+    const resolvedItems = [];
+    for (const item of validItems) {
+      const { unitCost, isEstimated } = await resolveReceiptUnitCost(
+        ctx,
+        businessId,
+        item.productId,
+        args.supplierId,
+        item.unitCost,
+      );
+      resolvedItems.push({ ...item, unitCost, isEstimated });
+    }
+
+    const totalAmount = resolvedItems.reduce(
       (sum, item) => sum + item.qty * item.unitCost,
       0,
     );
@@ -1338,7 +1372,7 @@ export const addStockReceipt = mutation({
       createdAt: now,
     });
 
-    for (const item of validItems) {
+    for (const item of resolvedItems) {
       const product = await ctx.db.get(item.productId);
       if (!product) continue;
 
@@ -1352,6 +1386,7 @@ export const addStockReceipt = mutation({
         qty: item.qty,
         qtyRemaining: item.qty,
         unitCost: item.unitCost,
+        isEstimated: item.isEstimated,
         expiresAt: item.expiresAt,
         createdAt: now,
       });
@@ -1379,6 +1414,86 @@ export const addStockReceipt = mutation({
     }
 
     return { receiptId };
+  },
+});
+
+export const updateStockReceiptItemCosts = mutation({
+  args: {
+    sessionToken: v.string(),
+    receiptId: v.id("stockReceipts"),
+    items: v.array(
+      v.object({
+        itemId: v.id("stockReceiptItems"),
+        unitCost: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!isAdmin(role) && !isSuperAdmin(role)) {
+      throw new Error("FORBIDDEN");
+    }
+    assertAcl(role, "master_produk");
+
+    const receipt = await ctx.db.get(args.receiptId);
+    if (!receipt) {
+      throw new Error("RECEIPT_NOT_FOUND");
+    }
+
+    await assertBusinessAccess(ctx, user, role, receipt.businessId);
+
+    const receiptItems = await ctx.db
+      .query("stockReceiptItems")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
+      .collect();
+
+    const itemById = new Map(receiptItems.map((item) => [item._id, item]));
+
+    for (const update of args.items) {
+      if (update.unitCost < 0) {
+        throw new Error("INVALID_UNIT_COST");
+      }
+      const existing = itemById.get(update.itemId);
+      if (!existing || existing.receiptId !== receipt._id) {
+        throw new Error("RECEIPT_ITEM_NOT_FOUND");
+      }
+
+      await ctx.db.patch(update.itemId, {
+        unitCost: update.unitCost,
+        isEstimated: false,
+      });
+
+      const historyEntries = await ctx.db
+        .query("supplierCostHistory")
+        .withIndex("by_business_product_supplier", (q) =>
+          q
+            .eq("businessId", receipt.businessId)
+            .eq("productId", existing.productId)
+            .eq("supplierId", receipt.supplierId),
+        )
+        .collect();
+
+      const history = historyEntries.find(
+        (entry) => entry.receiptId === receipt._id,
+      );
+      if (history) {
+        await ctx.db.patch(history._id, { unitCost: update.unitCost });
+      }
+    }
+
+    const updatedItems = await ctx.db
+      .query("stockReceiptItems")
+      .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
+      .collect();
+
+    const totalAmount = updatedItems.reduce(
+      (sum, item) => sum + item.qty * item.unitCost,
+      0,
+    );
+
+    await ctx.db.patch(receipt._id, { totalAmount });
+
+    return { success: true, totalAmount };
   },
 });
 
@@ -1537,11 +1652,13 @@ export const getStockReceiptDetail = query({
     for (const item of items) {
       const product = await ctx.db.get(item.productId);
       enrichedItems.push({
+        itemId: item._id,
         productId: item.productId,
         productName: product?.name ?? "—",
         productUnit: product?.unit ?? "",
         qty: item.qty,
         unitCost: item.unitCost,
+        isEstimated: item.isEstimated ?? false,
         lineTotal: item.qty * item.unitCost,
         expiresAt: item.expiresAt,
       });

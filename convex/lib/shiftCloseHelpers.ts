@@ -22,6 +22,7 @@ import {
   sanitizeShiftSummarySalesStats,
   updateDailyRollupsFromShiftSummary,
 } from "./shiftReportHelpers";
+import { resolveProductCategory } from "./productCategoryHelpers";
 
 export {
   buildPhysicalSalesByPriceTier,
@@ -337,6 +338,8 @@ export async function finalizeShiftClose(
     .map((tier) => ({
       productId: tier.productId,
       productName: tier.productName,
+      categoryId: tier.categoryId,
+      categoryName: tier.categoryName,
       qty: tier.qty,
       revenue: tier.revenue,
       cogs: tier.cogs,
@@ -466,6 +469,8 @@ export async function computeClosePreview(
   const stockPreview: Array<{
     productId: Id<"products">;
     productName: string;
+    categoryId?: Id<"productCategories">;
+    categoryName: string;
     openingQty: number;
     receivedQty: number;
     writeOffQty: number;
@@ -530,9 +535,13 @@ export async function computeClosePreview(
       impliedRevenue += missInputQty * unitPrice;
     }
 
+    const category = await resolveProductCategory(ctx, product);
+
     stockPreview.push({
       productId: snapshot.productId,
       productName: product.name,
+      categoryId: category.categoryId,
+      categoryName: category.categoryName,
       openingQty: snapshot.openingQty,
       receivedQty: received,
       writeOffQty: writeOff,

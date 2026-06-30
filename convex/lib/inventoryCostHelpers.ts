@@ -24,6 +24,60 @@ export async function resolveSaleLineCogs(
   return line.qty * unitCost;
 }
 
+export async function getLatestSupplierUnitCost(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  productId: Id<"products">,
+  supplierId: Id<"suppliers">,
+): Promise<number | null> {
+  const entries = await ctx.db
+    .query("supplierCostHistory")
+    .withIndex("by_business_product_supplier", (q) =>
+      q
+        .eq("businessId", businessId)
+        .eq("productId", productId)
+        .eq("supplierId", supplierId),
+    )
+    .collect();
+
+  if (entries.length === 0) return null;
+
+  const latest = entries.reduce((best, entry) =>
+    entry.effectiveAt > best.effectiveAt ? entry : best,
+  );
+  return latest.unitCost;
+}
+
+export async function resolveReceiptUnitCost(
+  ctx: QueryCtx | MutationCtx,
+  businessId: Id<"businesses">,
+  productId: Id<"products">,
+  supplierId: Id<"suppliers">,
+  providedCost?: number,
+): Promise<{ unitCost: number; isEstimated: boolean }> {
+  if (providedCost != null && providedCost > 0) {
+    return { unitCost: providedCost, isEstimated: false };
+  }
+
+  const fromSupplier = await getLatestSupplierUnitCost(
+    ctx,
+    businessId,
+    productId,
+    supplierId,
+  );
+  if (fromSupplier != null && fromSupplier > 0) {
+    return { unitCost: fromSupplier, isEstimated: true };
+  }
+
+  const product = await ctx.db.get(productId);
+  const fromDefault = product?.defaultUnitCost ?? 0;
+  if (fromDefault > 0) {
+    return { unitCost: fromDefault, isEstimated: true };
+  }
+
+  throw new Error("UNIT_COST_UNAVAILABLE");
+}
+
 export async function getLatestReceiptUnitCost(
   ctx: QueryCtx | MutationCtx,
   businessId: Id<"businesses">,

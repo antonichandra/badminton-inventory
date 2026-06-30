@@ -193,9 +193,16 @@ export function formatAnalyticsRangeLabel(
   translate: (key: "analyticsPeriod7" | "analyticsPeriod30" | "analyticsPeriod90") => string,
 ): string {
   if (state.mode === "rolling") {
-    if (state.period === 7) return translate("analyticsPeriod7");
-    if (state.period === 90) return translate("analyticsPeriod90");
-    return translate("analyticsPeriod30");
+    const periodLabel =
+      state.period === 7
+        ? translate("analyticsPeriod7")
+        : state.period === 90
+          ? translate("analyticsPeriod90")
+          : translate("analyticsPeriod30");
+    const { startDateKey, endDateKey } = rollingSaleDateRange(state.period);
+    const start = formatDayTooltipLabel(startDateKey, language);
+    const end = formatDayTooltipLabel(endDateKey, language);
+    return `${periodLabel} · ${start} – ${end}`;
   }
 
   const locale = language === "ID" ? "id-ID" : "en-US";

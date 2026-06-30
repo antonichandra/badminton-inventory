@@ -7,10 +7,11 @@ import {
 import { getAuthenticatedUser, hasAcl, isAdmin, isSuperAdmin } from "./lib/rbac";
 import { getActiveUnitCostForProduct } from "./lib/inventoryCostHelpers";
 import {
-  aggregateDailyRollupsFromShiftSummaries,
-  aggregateMonthlyRevenueFromShiftSummaries,
-  aggregateTopSellingProductsFromShiftSummaries,
-  aggregateTopSpendingGroupsFromSaleLines,
+  aggregateDailyRollupsHybrid,
+  aggregateMonthlyRevenueHybrid,
+  aggregateTopSellingProductsHybrid,
+  aggregateTopSpendingGroupsHybrid,
+  aggregateTopSellingCategoriesHybrid,
   rollingSaleDateRange,
   type SaleDateRange,
 } from "./lib/shiftReportHelpers";
@@ -19,6 +20,7 @@ import {
   resolvePriceKind,
 } from "./lib/productPriceHistoryHelpers";
 import { getOpenShiftForBusiness } from "./lib/shiftHelpers";
+import { resolveProductCategory } from "./lib/productCategoryHelpers";
 
 function resolveSaleDateRange(args: {
   days?: number;
@@ -54,7 +56,7 @@ export const getDailyRollups = query({
     await assertBusinessAccess(ctx, user, role, businessId);
 
     const range = resolveSaleDateRange(args);
-    return aggregateDailyRollupsFromShiftSummaries(ctx, businessId, range);
+    return aggregateDailyRollupsHybrid(ctx, businessId, range);
   },
 });
 
@@ -82,7 +84,7 @@ export const getTopSellingProducts = query({
     await assertBusinessAccess(ctx, user, role, businessId);
 
     const range = resolveSaleDateRange(args);
-    return aggregateTopSellingProductsFromShiftSummaries(
+    return aggregateTopSellingProductsHybrid(
       ctx,
       businessId,
       range,
@@ -115,7 +117,40 @@ export const getTopSpendingGroups = query({
     await assertBusinessAccess(ctx, user, role, businessId);
 
     const range = resolveSaleDateRange(args);
-    return aggregateTopSpendingGroupsFromSaleLines(
+    return aggregateTopSpendingGroupsHybrid(
+      ctx,
+      businessId,
+      range,
+      args.limit ?? 10,
+    );
+  },
+});
+
+export const getTopSellingCategories = query({
+  args: {
+    sessionToken: v.string(),
+    businessId: v.optional(v.id("businesses")),
+    days: v.optional(v.number()),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!hasAcl(role, "analytics")) return [];
+
+    const businessId = await resolveScopedBusinessId(
+      ctx,
+      user,
+      role,
+      args.businessId,
+    );
+    if (!businessId) return [];
+
+    await assertBusinessAccess(ctx, user, role, businessId);
+
+    const range = resolveSaleDateRange(args);
+    return aggregateTopSellingCategoriesHybrid(
       ctx,
       businessId,
       range,
@@ -152,7 +187,7 @@ export const getMonthlyComparison = query({
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthKey = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`;
 
-    return aggregateMonthlyRevenueFromShiftSummaries(
+    return aggregateMonthlyRevenueHybrid(
       ctx,
       businessId,
       thisMonthKey,
@@ -501,9 +536,13 @@ export const getInventoryStock = query({
       const stockAlert =
         qtyEstimated <= 0 ? ("empty" as const) : qtyEstimated <= LOW_STOCK_THRESHOLD ? ("low" as const) : ("ok" as const);
 
+      const category = await resolveProductCategory(ctx, product);
+
       results.push({
         productId: product._id,
         productName: product.name,
+        categoryId: category.categoryId,
+        categoryName: category.categoryName,
         unit: product.unit,
         sellPrice: product.sellPrice,
         trackExpiry: product.trackExpiry ?? false,

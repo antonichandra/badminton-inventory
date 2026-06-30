@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { getRoleById } from "./authHelpers";
 import { getFallbackUnitCost } from "./inventoryCostHelpers";
 import { resolveRetailSellPriceAt } from "./productPriceHistoryHelpers";
+import { resolveProductCategory } from "./productCategoryHelpers";
 
 export function calculateLineTotal(
   product: Doc<"products">,
@@ -158,6 +159,7 @@ export async function getShiftStockReconciliation(
     results.push({
       productId: snapshot.productId,
       productName: product.name,
+      ...(await resolveProductCategory(ctx, product)),
       openingQty: snapshot.openingQty,
       receivedQty: received,
       writeOffQty: writeOff,
@@ -188,6 +190,8 @@ export async function getShiftSalesByPriceTier(
     {
       productId: Id<"products">;
       productName: string;
+      categoryId?: Id<"productCategories">;
+      categoryName: string;
       unitPrice: number;
       qty: number;
       revenue: number;
@@ -221,9 +225,14 @@ export async function getShiftSalesByPriceTier(
         existing.rentalHoursTotal += line.qty * rentalHours;
       }
     } else {
+      const category = product
+        ? await resolveProductCategory(ctx, product)
+        : { categoryName: "—" as const };
       tierMap.set(key, {
         productId: line.productId,
         productName: product?.name ?? "—",
+        categoryId: category.categoryId,
+        categoryName: category.categoryName,
         unitPrice: line.unitPrice,
         qty: line.qty,
         revenue: line.lineTotal,
@@ -292,6 +301,8 @@ export async function getShiftSalesStats(
     {
       productId: Id<"products">;
       productName: string;
+      categoryId?: Id<"productCategories">;
+      categoryName: string;
       qty: number;
       revenue: number;
       cogs: number;
@@ -319,9 +330,14 @@ export async function getShiftSalesStats(
         existing.revenue += line.lineTotal;
         existing.cogs += lineCogs;
       } else {
+        const category = product
+          ? await resolveProductCategory(ctx, product)
+          : { categoryName: "—" as const };
         productMap.set(key, {
           productId: line.productId,
           productName: product?.name ?? "—",
+          categoryId: category.categoryId,
+          categoryName: category.categoryName,
           qty: line.qty,
           revenue: line.lineTotal,
           cogs: lineCogs,

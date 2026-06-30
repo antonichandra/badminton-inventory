@@ -28,7 +28,12 @@ export async function assertProductsLinkedToSupplier(
     businessId,
     supplierId,
   );
-  if (linked === null) return;
+  if (linked === null) {
+    if (productIds.length > 0) {
+      throw new Error("PRODUCT_NOT_LINKED_TO_SUPPLIER");
+    }
+    return;
+  }
 
   const linkedSet = new Set(linked);
   for (const productId of productIds) {
