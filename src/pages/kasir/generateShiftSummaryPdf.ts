@@ -18,6 +18,7 @@ interface ShiftExportSummary {
   variance?: number;
   salesByPriceTier?: Array<{
     productName: string;
+    categoryName?: string;
     unitPrice: number;
     qty: number;
     revenue: number;
@@ -28,6 +29,7 @@ interface ShiftExportSummary {
 
 interface ShiftExportLine {
   productName: string;
+  categoryName?: string;
   qty: number;
   unitPrice: number;
   lineTotal: number;
@@ -214,6 +216,7 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
       head: [
         [
           data.language === "ID" ? "Produk" : "Product",
+          data.language === "ID" ? "Kategori" : "Category",
           data.language === "ID" ? "Harga" : "Price",
           data.language === "ID" ? "Qty" : "Qty",
           data.language === "ID" ? "Pendapatan" : "Revenue",
@@ -226,14 +229,20 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
           : String(tier.qty);
         const priceLabel =
           pdfAmount(tier.unitPrice) + (isRental ? "/jam" : "");
-        return [tier.productName, priceLabel, qtyLabel, pdfAmount(tier.revenue)];
+        return [
+          tier.productName,
+          tier.categoryName ?? "",
+          priceLabel,
+          qtyLabel,
+          pdfAmount(tier.revenue),
+        ];
       }),
       theme: "striped",
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [71, 85, 105] },
       columnStyles: {
-        2: { halign: "center" },
-        3: { halign: "right" },
+        3: { halign: "center" },
+        4: { halign: "right" },
       },
       margin: { left: MARGIN, right: MARGIN },
     });
@@ -265,6 +274,7 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
       head: [
         [
           data.language === "ID" ? "Produk" : "Product",
+          data.language === "ID" ? "Kategori" : "Category",
           "Qty",
           data.language === "ID" ? "Harga" : "Price",
           data.language === "ID" ? "Total" : "Total",
@@ -273,6 +283,7 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
       ],
       body: data.lines.map((line) => [
         line.productName,
+        line.categoryName ?? "",
         String(line.qty),
         pdfAmount(line.unitPrice),
         pdfAmount(line.lineTotal),
@@ -282,9 +293,9 @@ export function generateShiftSummaryPdf(data: ShiftSummaryPdfData): Blob {
       styles: { fontSize: 7, cellPadding: 1.5 },
       headStyles: { fillColor: [71, 85, 105] },
       columnStyles: {
-        1: { halign: "center" },
-        2: { halign: "right" },
+        2: { halign: "center" },
         3: { halign: "right" },
+        4: { halign: "right" },
       },
       margin: { left: MARGIN, right: MARGIN },
     });

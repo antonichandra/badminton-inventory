@@ -9,6 +9,7 @@ import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
 import { ShiftCashBreakdown } from "./ShiftCashBreakdown";
 import { CloseShiftStockPreview } from "./CloseShiftStockPreview";
+import { GroupedStockTable, GroupedStockTd, GroupedStockTh } from "./GroupedStockTable";
 import { formatRupiah } from "./utils";
 
 interface CloseShiftWizardProps {
@@ -149,45 +150,48 @@ export function CloseShiftWizard({
 
       {step === 1 && (
         <div className="mt-6 space-y-4">
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left dark:bg-slate-800">
-                <tr>
-                  <th className="px-3 py-2">Produk</th>
-                  <th className="px-3 py-2">{translate("kasirClosingStock")}</th>
-                  <th className="px-3 py-2">{translate("kasirReceived")}</th>
-                  <th className="px-3 py-2">{translate("kasirSoldQty")}</th>
-                  <th className="px-3 py-2">{translate("kasirWriteOff")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stockRows.map((row) => (
-                  <tr
-                    key={row.productId}
-                    className="border-t border-slate-100 dark:border-slate-800"
-                  >
-                    <td className="px-3 py-2">{row.productName}</td>
-                    <td className="px-3 py-2">
-                      <InputNumber
-                        variant="inline"
-                        value={closingStock[row.productId] ?? "0"}
-                        onChange={(value) =>
-                          setClosingStock((prev) => ({
-                            ...prev,
-                            [row.productId]: value,
-                          }))
-                        }
-                        min={0}
-                      />
-                    </td>
-                    <td className="px-3 py-2">{row.receivedQty}</td>
-                    <td className="px-3 py-2">{row.soldQty}</td>
-                    <td className="px-3 py-2">{row.writeOffQty}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <GroupedStockTable
+            rows={stockRows}
+            itemCountLabel={(count) =>
+              translate("categoryItemCount").replace("{count}", String(count))
+            }
+            headers={
+              <tr>
+                <GroupedStockTh>Produk</GroupedStockTh>
+                <GroupedStockTh>{translate("kasirClosingStock")}</GroupedStockTh>
+                <GroupedStockTh>{translate("kasirReceived")}</GroupedStockTh>
+                <GroupedStockTh>{translate("kasirSoldQty")}</GroupedStockTh>
+                <GroupedStockTh>{translate("kasirWriteOff")}</GroupedStockTh>
+              </tr>
+            }
+            renderRow={(row) => (
+              <>
+                <GroupedStockTd className="font-medium text-slate-900 dark:text-white">
+                  {row.productName}
+                </GroupedStockTd>
+                <GroupedStockTd>
+                  <InputNumber
+                    variant="inline"
+                    value={closingStock[row.productId] ?? "0"}
+                    onChange={(value) =>
+                      setClosingStock((prev) => ({
+                        ...prev,
+                        [row.productId]: value,
+                      }))
+                    }
+                    min={0}
+                  />
+                </GroupedStockTd>
+                <GroupedStockTd className="tabular-nums">
+                  {row.receivedQty}
+                </GroupedStockTd>
+                <GroupedStockTd className="tabular-nums">{row.soldQty}</GroupedStockTd>
+                <GroupedStockTd className="tabular-nums">
+                  {row.writeOffQty}
+                </GroupedStockTd>
+              </>
+            )}
+          />
           <div className="flex justify-between">
             <Button variant="ghost" onClick={onCancel}>
               {translate("cancel")}

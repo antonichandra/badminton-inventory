@@ -24,6 +24,12 @@ export const MENU_CONFIG: MenuItem[] = [
         permission: "master_produk",
       },
       {
+        id: "master-kategori-produk",
+        labelKey: "menuKategoriProduk",
+        path: "/master/kategori-produk",
+        permission: "master_produk",
+      },
+      {
         id: "master-supplier",
         labelKey: "menuSupplier",
         path: "/master/supplier",

@@ -15,15 +15,19 @@ import { useBusiness } from "../core/context/BusinessContext";
 import { useLanguage } from "../core/context/LanguageContext";
 import { useToast } from "../core/context/ToastContext";
 import { formatDateOnly } from "../core/utils/formatDate";
+import { groupByCategory } from "../core/utils/groupByCategory";
+import {
+  CategoryGroupSection,
+  CategoryGroupsContainer,
+} from "../core/components/categoryGroup";
 import { showProfitDetail } from "../core/utils/showProfitDetail";
 import {
-  KasirTableShell,
   KasirTd,
   KasirTh,
-  kasirTableClass,
-  kasirTbodyClass,
+  kasirCompactTableClass,
+  kasirCompactTheadClass,
+  kasirCompactTbodyClass,
   kasirTdClass,
-  kasirTheadClass,
   kasirTrClass,
 } from "./kasir/KasirTable";
 import { formatRupiah } from "./kasir/utils";
@@ -93,6 +97,11 @@ export function InventoryPage() {
   );
   const mainTableColCount = showExpiryColumn ? 7 : 6;
 
+  const inventoryGroups = useMemo(
+    () => groupByCategory(inventory),
+    [inventory],
+  );
+
   const toggleExpanded = (productId: Id<"products">) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -127,7 +136,7 @@ export function InventoryPage() {
           <p className="text-slate-500">{translate("inventoryEmpty")}</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           <div className="text-sm text-slate-500">
             <p>
               {translate("inventorySummary")
@@ -148,49 +157,99 @@ export function InventoryPage() {
             )}
           </div>
 
-          <KasirTableShell>
-            <table className={kasirTableClass}>
-              <thead className={kasirTheadClass}>
-                <tr>
-                  <KasirTh className="w-10">
-                    <span className="sr-only">Expand</span>
-                  </KasirTh>
-                  <KasirTh>{translate("inventoryColProduct")}</KasirTh>
-                  <KasirTh>{translate("inventoryColStatus")}</KasirTh>
-                  <KasirTh>{translate("inventoryColQtyOnHand")}</KasirTh>
-                  <KasirTh>{translate("inventoryColQtyEstimated")}</KasirTh>
-                  {showExpiryColumn && (
-                    <KasirTh>{translate("inventoryColNearestExpiry")}</KasirTh>
-                  )}
-                  <KasirTh>{translate("inventoryColSellPrice")}</KasirTh>
-                </tr>
-              </thead>
-              <tbody className={kasirTbodyClass}>
-                {inventory.map((row) => (
-                  <ProductStockRows
-                    key={row.productId}
-                    row={row}
-                    isOpen={expanded.has(row.productId)}
-                    language={language}
-                    showCost={showCost}
-                    showExpiryColumn={showExpiryColumn}
-                    mainTableColCount={mainTableColCount}
-                    onToggle={() => toggleExpanded(row.productId)}
-                    onEditBatch={(batch) =>
-                      setEditingBatch({
-                        batchId: batch.batchId,
-                        productName: row.productName,
-                        supplierName: batch.supplierName,
-                        trackExpiry: row.trackExpiry ?? false,
-                        expiresAt: batch.expiresAt,
-                      })
-                    }
-                    translate={translate}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </KasirTableShell>
+          <CategoryGroupsContainer>
+          {inventoryGroups.map((group) => {
+            const qtyEstimated = group.items.reduce(
+              (sum, row) => sum + row.qtyEstimated,
+              0,
+            );
+            const attentionInGroup = group.items.filter(
+              (row) =>
+                row.stockAlert === "empty" || row.stockAlert === "low",
+            ).length;
+            const metaParts = [
+              translate("inventoryGroupQtyEst").replace(
+                "{qty}",
+                String(qtyEstimated),
+              ),
+            ];
+            if (attentionInGroup > 0) {
+              metaParts.push(
+                translate("inventoryGroupAttention").replace(
+                  "{count}",
+                  String(attentionInGroup),
+                ),
+              );
+            }
+
+            return (
+              <CategoryGroupSection
+                key={group.categoryId ?? group.categoryName}
+                categoryName={group.categoryName}
+                itemCountLabel={translate("categoryItemCount").replace(
+                  "{count}",
+                  String(group.items.length),
+                )}
+                meta={metaParts.join(" · ")}
+              >
+                <table className={kasirCompactTableClass}>
+                  <thead className={kasirCompactTheadClass}>
+                    <tr>
+                      <KasirTh compact className="w-8">
+                        <span className="sr-only">Expand</span>
+                      </KasirTh>
+                      <KasirTh compact>
+                        {translate("inventoryColProduct")}
+                      </KasirTh>
+                      <KasirTh compact>
+                        {translate("inventoryColStatus")}
+                      </KasirTh>
+                      <KasirTh compact>
+                        {translate("inventoryColQtyOnHand")}
+                      </KasirTh>
+                      <KasirTh compact>
+                        {translate("inventoryColQtyEstimated")}
+                      </KasirTh>
+                      {showExpiryColumn && (
+                        <KasirTh compact>
+                          {translate("inventoryColNearestExpiry")}
+                        </KasirTh>
+                      )}
+                      <KasirTh compact>
+                        {translate("inventoryColSellPrice")}
+                      </KasirTh>
+                    </tr>
+                  </thead>
+                  <tbody className={kasirCompactTbodyClass}>
+                    {group.items.map((row) => (
+                      <ProductStockRows
+                        key={row.productId}
+                        row={row}
+                        isOpen={expanded.has(row.productId)}
+                        language={language}
+                        showCost={showCost}
+                        showExpiryColumn={showExpiryColumn}
+                        mainTableColCount={mainTableColCount}
+                        compact
+                        onToggle={() => toggleExpanded(row.productId)}
+                        onEditBatch={(batch) =>
+                          setEditingBatch({
+                            batchId: batch.batchId,
+                            productName: row.productName,
+                            supplierName: batch.supplierName,
+                            trackExpiry: row.trackExpiry ?? false,
+                            expiresAt: batch.expiresAt,
+                          })
+                        }
+                        translate={translate}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </CategoryGroupSection>
+            );
+          })}
+          </CategoryGroupsContainer>
         </div>
       )}
 
@@ -378,6 +437,7 @@ function ProductStockRows({
   showCost,
   showExpiryColumn,
   mainTableColCount,
+  compact = false,
   onToggle,
   onEditBatch,
   translate,
@@ -407,6 +467,7 @@ function ProductStockRows({
   showCost: boolean;
   showExpiryColumn: boolean;
   mainTableColCount: number;
+  compact?: boolean;
   onToggle: () => void;
   onEditBatch: (batch: {
     batchId: Id<"stockReceiptItems">;
@@ -424,38 +485,42 @@ function ProductStockRows({
   return (
     <>
       <tr className={`${kasirTrClass} ${rowAlertClass(row.stockAlert)}`}>
-        <KasirTd>
+        <KasirTd compact={compact}>
           <button
             type="button"
             onClick={onToggle}
-            className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="rounded p-0.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
             aria-expanded={isOpen}
             aria-label={row.productName}
           >
             {isOpen ? (
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className="h-3.5 w-3.5" />
             ) : (
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-3.5 w-3.5" />
             )}
           </button>
         </KasirTd>
-        <KasirTd className="font-medium text-slate-900 dark:text-white">
+        <KasirTd
+          compact={compact}
+          className="font-medium text-slate-900 dark:text-white"
+        >
           {row.productName}
-          <span className="ml-1 text-xs font-normal text-slate-500">
+          <span className="ml-1 text-[10px] font-normal text-slate-500">
             ({row.unit})
           </span>
         </KasirTd>
-        <KasirTd>
+        <KasirTd compact={compact}>
           <StockStatusBadge alert={row.stockAlert} translate={translate} />
         </KasirTd>
-        <KasirTd className={qtyToneClass(row.qtyOnHand)}>
+        <KasirTd compact={compact} className={qtyToneClass(row.qtyOnHand)}>
           {row.qtyOnHand} {row.unit}
         </KasirTd>
-        <KasirTd className={qtyToneClass(row.qtyEstimated)}>
+        <KasirTd compact={compact} className={qtyToneClass(row.qtyEstimated)}>
           {row.qtyEstimated} {row.unit}
         </KasirTd>
         {showExpiryColumn && (
           <KasirTd
+            compact={compact}
             className={
               trackExpiry && expirySoon
                 ? "font-medium text-amber-700 dark:text-amber-400"
@@ -467,7 +532,7 @@ function ProductStockRows({
               : "—"}
           </KasirTd>
         )}
-        <KasirTd>{formatRupiah(row.sellPrice)}</KasirTd>
+        <KasirTd compact={compact}>{formatRupiah(row.sellPrice)}</KasirTd>
       </tr>
 
       {isOpen && (

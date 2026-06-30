@@ -2,6 +2,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getFallbackUnitCost } from "./inventoryCostHelpers";
 import { resolveRetailSellPriceAt } from "./productPriceHistoryHelpers";
+import { resolveProductCategory } from "./productCategoryHelpers";
 
 export interface PhysicalStockSoldRow {
   productId: Id<"products">;
@@ -12,6 +13,8 @@ export interface PhysicalStockSoldRow {
 export type PhysicalPriceTier = {
   productId: Id<"products">;
   productName: string;
+  categoryId?: Id<"productCategories">;
+  categoryName: string;
   unitPrice: number;
   qty: number;
   revenue: number;
@@ -53,6 +56,8 @@ function upsertRetailTier(
   args: {
     productId: Id<"products">;
     productName: string;
+    categoryId?: Id<"productCategories">;
+    categoryName: string;
     unitPrice: number;
     qty: number;
     unitCost: number;
@@ -74,6 +79,8 @@ function upsertRetailTier(
   tierMap.set(key, {
     productId: args.productId,
     productName: args.productName,
+    categoryId: args.categoryId,
+    categoryName: args.categoryName,
     unitPrice: args.unitPrice,
     qty: args.qty,
     revenue,
@@ -107,6 +114,7 @@ export async function allocatePhysicalRetailTiers(
     const unitCost = includeCost
       ? await getFallbackUnitCost(ctx, businessId, row.productId)
       : 0;
+    const category = await resolveProductCategory(ctx, product);
 
     let remaining = sold;
     const productLines = paidRetailByProduct.get(row.productId) ?? [];
@@ -117,6 +125,8 @@ export async function allocatePhysicalRetailTiers(
       upsertRetailTier(tierMap, {
         productId: row.productId,
         productName: product.name,
+        categoryId: category.categoryId,
+        categoryName: category.categoryName,
         unitPrice: line.unitPrice,
         qty: take,
         unitCost,
@@ -134,6 +144,8 @@ export async function allocatePhysicalRetailTiers(
       upsertRetailTier(tierMap, {
         productId: row.productId,
         productName: product.name,
+        categoryId: category.categoryId,
+        categoryName: category.categoryName,
         unitPrice,
         qty: remaining,
         unitCost,
@@ -158,6 +170,8 @@ async function loadRentalPriceTiers(
     {
       productId: Id<"products">;
       productName: string;
+      categoryId?: Id<"productCategories">;
+      categoryName: string;
       unitPrice: number;
       qty: number;
       revenue: number;
@@ -178,9 +192,12 @@ async function loadRentalPriceTiers(
       existing.revenue += line.lineTotal;
       existing.rentalHoursTotal += line.qty * rentalHours;
     } else {
+      const category = await resolveProductCategory(ctx, product);
       rentalMap.set(key, {
         productId: line.productId,
         productName: product.name,
+        categoryId: category.categoryId,
+        categoryName: category.categoryName,
         unitPrice: line.unitPrice,
         qty: line.qty,
         revenue: line.lineTotal,

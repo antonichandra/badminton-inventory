@@ -8,6 +8,18 @@ import { Button } from "../../../core/components/ui/Button";
 import { LoadingState } from "../../../core/components/ui/LoadingState";
 import { useBusiness } from "../../../core/context/BusinessContext";
 import { useLanguage } from "../../../core/context/LanguageContext";
+import { groupByCategory } from "../../../core/utils/groupByCategory";
+import { cn } from "../../../core/utils/cn";
+import {
+  CategoryGroupSection,
+  CategoryGroupsContainer,
+  compactTdClass,
+  compactThClass,
+  compactTrClass,
+  compactTableClass,
+  compactTheadClass,
+  compactTbodyClass,
+} from "../../../core/components/categoryGroup";
 import { formatRupiah } from "../../kasir/utils";
 import type { SupplierRow } from "./suppliers.config";
 
@@ -74,6 +86,11 @@ export function SupplierProductsModal({
         product.unit.toLowerCase().includes(term),
     );
   }, [products, search]);
+
+  const productGroups = useMemo(
+    () => groupByCategory(filteredProducts),
+    [filteredProducts],
+  );
 
   const toggleProduct = (productId: string) => {
     setSelectedIds((prev) => {
@@ -151,54 +168,92 @@ export function SupplierProductsModal({
             {translate("productEmpty")}
           </p>
         ) : (
-          <div className="max-h-[min(420px,60vh)] overflow-auto rounded-lg border border-slate-200 dark:border-slate-700">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-              <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800">
-                <tr>
-                  <th className="w-10 px-3 py-2.5" />
-                  <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                    {translate("productColName")}
-                  </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                    {translate("productColUnit")}
-                  </th>
-                  <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
-                    {translate("productColPrice")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-900">
-                {filteredProducts.map((product) => {
-                  const checked = selectedIds.has(product._id);
-                  return (
-                    <tr
-                      key={product._id}
-                      className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                      onClick={() => toggleProduct(product._id)}
-                    >
-                      <td className="px-3 py-2.5">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleProduct(product._id)}
-                          onClick={(event) => event.stopPropagation()}
-                          className="h-4 w-4 rounded border-slate-300"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 text-sm font-medium text-slate-900 dark:text-white">
-                        {product.name}
-                      </td>
-                      <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300">
-                        {product.unit}
-                      </td>
-                      <td className="px-3 py-2.5 text-right text-sm text-slate-700 dark:text-slate-300">
-                        {formatRupiah(product.sellPrice)}
-                      </td>
+          <div className="max-h-[min(420px,60vh)] overflow-auto">
+            <CategoryGroupsContainer>
+            {productGroups.map((group) => {
+              const selectedInGroup = group.items.filter((p) =>
+                selectedIds.has(p._id),
+              ).length;
+
+              return (
+              <CategoryGroupSection
+                key={group.categoryId ?? group.categoryName}
+                categoryName={group.categoryName}
+                itemCountLabel={translate("categoryItemCount").replace(
+                  "{count}",
+                  String(group.items.length),
+                )}
+                meta={
+                  selectedInGroup > 0
+                    ? translate("supplierLinkedProductsCount").replace(
+                        "{count}",
+                        String(selectedInGroup),
+                      )
+                    : undefined
+                }
+              >
+                <table className={compactTableClass}>
+                  <thead className={compactTheadClass}>
+                    <tr>
+                      <th className={cn(compactThClass, "w-8")} />
+                      <th className={compactThClass}>
+                        {translate("productColName")}
+                      </th>
+                      <th className={compactThClass}>
+                        {translate("productColUnit")}
+                      </th>
+                      <th className={cn(compactThClass, "text-right")}>
+                        {translate("productColPrice")}
+                      </th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody className={compactTbodyClass}>
+                    {group.items.map((product) => {
+                      const checked = selectedIds.has(product._id);
+                      return (
+                        <tr
+                          key={product._id}
+                          className={cn(
+                            compactTrClass,
+                            "cursor-pointer",
+                          )}
+                          onClick={() => toggleProduct(product._id)}
+                        >
+                          <td className={compactTdClass}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleProduct(product._id)}
+                              onClick={(event) => event.stopPropagation()}
+                              className="h-3.5 w-3.5 rounded border-slate-300"
+                            />
+                          </td>
+                          <td
+                            className={cn(
+                              compactTdClass,
+                              "font-medium text-slate-900 dark:text-white",
+                            )}
+                          >
+                            {product.name}
+                          </td>
+                          <td className={compactTdClass}>{product.unit}</td>
+                          <td
+                            className={cn(
+                              compactTdClass,
+                              "text-right tabular-nums",
+                            )}
+                          >
+                            {formatRupiah(product.sellPrice)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </CategoryGroupSection>
+            );
+            })}
+            </CategoryGroupsContainer>
           </div>
         )}
 

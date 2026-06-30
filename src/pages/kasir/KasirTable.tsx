@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
 import { cn } from "../../core/utils/cn";
+import {
+  compactTableClass,
+  compactTbodyClass,
+  compactTdClass,
+  compactTheadClass,
+  compactThClass,
+  compactTrClass,
+} from "../../core/components/categoryGroup/styles";
 
 export function KasirTableShell({ children }: { children: ReactNode }) {
   return (
@@ -26,22 +34,43 @@ export const kasirTrClass =
 export const kasirTdClass =
   "px-4 py-3 align-middle text-sm text-slate-700 dark:text-slate-300";
 
+export {
+  compactTableClass as kasirCompactTableClass,
+  compactTheadClass as kasirCompactTheadClass,
+  compactTbodyClass as kasirCompactTbodyClass,
+  compactTrClass as kasirCompactTrClass,
+  compactThClass as kasirCompactThClass,
+  compactTdClass as kasirCompactTdClass,
+};
+
 export function KasirTh({
   className,
   children,
+  compact = false,
 }: {
   className?: string;
   children: ReactNode;
+  compact?: boolean;
 }) {
-  return <th className={cn(kasirThClass, className)}>{children}</th>;
+  return (
+    <th className={cn(compact ? compactThClass : kasirThClass, className)}>
+      {children}
+    </th>
+  );
 }
 
 export function KasirTd({
   className,
   children,
+  compact = false,
 }: {
   className?: string;
   children: ReactNode;
+  compact?: boolean;
 }) {
-  return <td className={cn(kasirTdClass, className)}>{children}</td>;
+  return (
+    <td className={cn(compact ? compactTdClass : kasirTdClass, className)}>
+      {children}
+    </td>
+  );
 }

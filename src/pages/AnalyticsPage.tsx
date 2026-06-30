@@ -92,6 +92,16 @@ export function AnalyticsPage() {
         }
       : "skip",
   );
+  const topSellingCategories = useQuery(
+    api.reports.getTopSellingCategories,
+    sessionToken
+      ? {
+          sessionToken,
+          businessId: activeBusinessId ?? undefined,
+          ...rangeQueryArgs,
+        }
+      : "skip",
+  );
 
   const chartSeries = useMemo(
     () => resolveChartSeries(rollups ?? [], range, language),
@@ -251,18 +261,27 @@ export function AnalyticsPage() {
       <PeriodInsights
         periodLabel={rangeLabel}
         topProducts={topSellingProducts}
+        topCategories={topSellingCategories}
         topGroups={topSpendingGroups}
         labels={{
           topProductsTitle: translate("analyticsTopProducts"),
+          topCategoriesTitle: translate("analyticsTopCategories"),
           topGroupsTitle: translate("analyticsTopGroups"),
           productName: translate("productColName"),
+          categoryName: translate("analyticsCategoryName"),
           price: translate("productColPrice"),
           profit: translate("analyticsMetricProfit"),
           qty: translate("kasirSoldQty"),
           spend: translate("analyticsGroupSpend"),
           groupProducts: translate("analyticsGroupProducts"),
+          breakdownByProduct: translate("analyticsBreakdownByProduct"),
+          breakdownByCategory: translate("analyticsBreakdownByCategory"),
           emptyProducts: translate("analyticsTopProductsEmpty"),
+          emptyCategories: translate("analyticsTopCategoriesEmpty"),
           emptyGroups: translate("analyticsTopGroupsEmpty"),
+          ungroupedGroup: translate("kasirUngrouped"),
+          missInputGroup: translate("kasirMissInput"),
+          soldLabel: translate("kasirSoldQty").toLowerCase(),
         }}
       />
 

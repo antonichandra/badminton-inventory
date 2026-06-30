@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { ResponsiveFilterBar } from "../../core/components/filters/ResponsiveFilterBar";
 import { PageHeader } from "../../core/components/PageHeader";
 import { PageTopSection } from "../../core/components/PageTopSection";
@@ -13,6 +14,11 @@ import { useBusiness } from "../../core/context/BusinessContext";
 import { useToast } from "../../core/context/ToastContext";
 import { useFilterState } from "../../core/hooks/useFilterState";
 import { useLanguage } from "../../core/context/LanguageContext";
+import { groupByCategory } from "../../core/utils/groupByCategory";
+import {
+  CategoryGroupSection,
+  CategoryGroupsContainer,
+} from "../../core/components/categoryGroup";
 import {
   buildProductFilterFields,
   buildProductTableColumns,
@@ -33,25 +39,39 @@ export function ProdukPage() {
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
   const [historyProduct, setHistoryProduct] = useState<ProductRow | null>(null);
 
+  const categoryOptions = useQuery(
+    api.productCategories.listCategoryOptions,
+    sessionToken ? { sessionToken } : "skip",
+  );
+
   const filterFields = useMemo(
     () =>
-      buildProductFilterFields({
-        search: translate("productFilterSearch"),
-        searchPlaceholder: translate("productFilterSearchPlaceholder"),
-        type: translate("productFilterType"),
-        typePlaceholder: translate("productFilterTypePlaceholder"),
-        status: translate("productFilterStatus"),
-        statusPlaceholder: translate("productFilterStatusPlaceholder"),
-        trackExpiry: translate("productFilterTrackExpiry"),
-        trackExpiryPlaceholder: translate("productFilterTrackExpiryPlaceholder"),
-        typeRetail: translate("productTypeRetail"),
-        typeRental: translate("productTypeRental"),
-        active: translate("supplierActive"),
-        inactive: translate("supplierInactive"),
-        trackExpiryYes: translate("productFilterTrackExpiryYes"),
-        trackExpiryNo: translate("productFilterTrackExpiryNo"),
-      }),
-    [translate],
+      buildProductFilterFields(
+        {
+          search: translate("productFilterSearch"),
+          searchPlaceholder: translate("productFilterSearchPlaceholder"),
+          type: translate("productFilterType"),
+          typePlaceholder: translate("productFilterTypePlaceholder"),
+          status: translate("productFilterStatus"),
+          statusPlaceholder: translate("productFilterStatusPlaceholder"),
+          trackExpiry: translate("productFilterTrackExpiry"),
+          trackExpiryPlaceholder: translate("productFilterTrackExpiryPlaceholder"),
+          typeRetail: translate("productTypeRetail"),
+          typeRental: translate("productTypeRental"),
+          active: translate("supplierActive"),
+          inactive: translate("supplierInactive"),
+          trackExpiryYes: translate("productFilterTrackExpiryYes"),
+          trackExpiryNo: translate("productFilterTrackExpiryNo"),
+          category: translate("productFilterCategory"),
+          categoryPlaceholder: translate("productFilterCategoryPlaceholder"),
+          uncategorized: translate("uncategorized"),
+        },
+        (categoryOptions ?? []).map((option: { value: string; label: string }) => ({
+          value: option.value,
+          label: option.label,
+        })),
+      ),
+    [translate, categoryOptions],
   );
 
   const {
@@ -73,6 +93,14 @@ export function ProdukPage() {
   const trackExpiry = (
     Array.isArray(appliedValues.trackExpiry) ? appliedValues.trackExpiry : []
   ) as ProductTrackExpiryFilter[];
+  const selectedCategories = Array.isArray(appliedValues.categories)
+    ? appliedValues.categories
+    : [];
+  const categoryIds = selectedCategories.filter(
+    (value): value is Id<"productCategories"> =>
+      value !== "__uncategorized__" && typeof value === "string",
+  );
+  const uncategorized = selectedCategories.includes("__uncategorized__");
 
   const products = useQuery(
     api.products.listProducts,
@@ -84,6 +112,8 @@ export function ProdukPage() {
           types: types.length > 0 ? types : undefined,
           statuses: statuses.length > 0 ? statuses : undefined,
           trackExpiry: trackExpiry.length > 0 ? trackExpiry : undefined,
+          categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
+          uncategorized: uncategorized || undefined,
         }
       : "skip",
   );
@@ -107,6 +137,7 @@ export function ProdukPage() {
           buyPrice: translate("productBuyPrice"),
           margin: translate("productMargin"),
           unit: translate("productColUnit"),
+          packSizeInfo: translate("kasirPackSizeInfo"),
           trackExpiry: translate("productColTrackExpiry"),
           trackExpiryYes: translate("productFilterTrackExpiryYes"),
           trackExpiryNo: translate("productFilterTrackExpiryNo"),
@@ -124,6 +155,11 @@ export function ProdukPage() {
     [handleEdit, handlePriceHistory, translate],
   );
 
+  const productGroups = useMemo(
+    () => groupByCategory(products ?? []),
+    [products],
+  );
+
   const handleAdd = () => {
     setEditingProduct(null);
     setFormOpen(true);
@@ -137,6 +173,8 @@ export function ProdukPage() {
         : translate("productCreateSuccess"),
     });
   };
+
+  const isLoading = sessionToken !== null && products === undefined;
 
   return (
     <PermissionGuard permission="master_produk">
@@ -171,13 +209,56 @@ export function ProdukPage() {
         />
       </div>
 
-      <DataTable
-        columns={columns}
-        data={products ?? []}
-        getRowKey={(row) => row._id}
-        emptyMessage={translate("productEmpty")}
-        isLoading={sessionToken !== null && products === undefined}
-      />
+      {isLoading ? (
+        <div className="h-40 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+      ) : (products?.length ?? 0) === 0 ? (
+        <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700">
+          {translate("productEmpty")}
+        </p>
+      ) : (
+        <CategoryGroupsContainer>
+          {productGroups.map((group) => {
+            const activeCount = group.items.filter((p) => p.isActive).length;
+            const inactiveCount = group.items.length - activeCount;
+            const retailCount = group.items.filter(
+              (p) => p.type === "RETAIL",
+            ).length;
+            const rentalCount = group.items.length - retailCount;
+            const metaParts = [
+              `${activeCount} ${translate("supplierActive").toLowerCase()}`,
+            ];
+            if (inactiveCount > 0) {
+              metaParts.push(
+                `${inactiveCount} ${translate("supplierInactive").toLowerCase()}`,
+              );
+            }
+            if (retailCount > 0 && rentalCount > 0) {
+              metaParts.push(
+                `${retailCount} ${translate("productTypeRetail").toLowerCase()} · ${rentalCount} ${translate("productTypeRental").toLowerCase()}`,
+              );
+            }
+
+            return (
+              <CategoryGroupSection
+                key={group.categoryId ?? group.categoryName}
+                categoryName={group.categoryName}
+                itemCountLabel={translate("categoryItemCount").replace(
+                  "{count}",
+                  String(group.items.length),
+                )}
+                meta={metaParts.join(" · ")}
+              >
+                <DataTable
+                  embedded
+                  columns={columns}
+                  data={group.items}
+                  getRowKey={(row) => row._id}
+                />
+              </CategoryGroupSection>
+            );
+          })}
+        </CategoryGroupsContainer>
+      )}
 
       {sessionToken && (
         <ProductFormModal

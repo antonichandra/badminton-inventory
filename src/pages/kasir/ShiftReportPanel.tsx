@@ -5,12 +5,21 @@ import { Button } from "../../core/components/ui/Button";
 import { useAuth } from "../../core/context/AuthContext";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { formatDateTime } from "../../core/utils/formatDate";
+import { groupByCategory } from "../../core/utils/groupByCategory";
 import { showProfitDetail } from "../../core/utils/showProfitDetail";
+import {
+  CategoryGroupSection,
+  CategoryGroupsContainer,
+} from "../../core/components/categoryGroup";
 import { SalesByTierTabs } from "./SalesByTierTabs";
 import {
   KasirTableShell,
   KasirTd,
   KasirTh,
+  kasirCompactTableClass,
+  kasirCompactTheadClass,
+  kasirCompactTbodyClass,
+  kasirCompactTrClass,
   kasirTableClass,
   kasirTbodyClass,
   kasirTheadClass,
@@ -27,6 +36,8 @@ interface ShiftReportPanelProps {
 type TopProductRow = {
   productId: Id<"products">;
   productName: string;
+  categoryId?: Id<"productCategories">;
+  categoryName?: string;
   qty: number;
   revenue: number;
   cogs?: number;
@@ -53,6 +64,15 @@ export function ShiftReportPanel({
     sessionToken,
     businessId,
   });
+
+  const topProductGroups = liveStats
+    ? groupByCategory(
+        liveStats.topProducts.slice(0, 10).map((product) => ({
+          ...product,
+          categoryName: (product as TopProductRow).categoryName,
+        })),
+      )
+    : [];
 
   return (
     <div className="space-y-6">
@@ -87,54 +107,82 @@ export function ShiftReportPanel({
           </div>
 
           {liveStats.topProducts.length > 0 && (
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="mt-4 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                 {translate("kasirTopProducts")}
               </p>
-              <KasirTableShell>
-                <table className={kasirTableClass}>
-                  <thead className={kasirTheadClass}>
-                    <tr>
-                      <KasirTh>Produk</KasirTh>
-                      <KasirTh>{translate("kasirSoldQty")}</KasirTh>
-                      <KasirTh>{translate("kasirRevenue")}</KasirTh>
-                      {showGrossProfit && (
-                        <>
-                          <KasirTh>{translate("kasirBuyPrice")}</KasirTh>
-                          <KasirTh>{translate("kasirGrossProfit")}</KasirTh>
-                        </>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className={kasirTbodyClass}>
-                    {liveStats.topProducts.slice(0, 5).map((p: TopProductRow) => (
-                      <tr key={p.productId} className={kasirTrClass}>
-                        <KasirTd className="font-medium text-slate-900 dark:text-white">
-                          {p.productName}
-                        </KasirTd>
-                        <KasirTd>{p.qty}</KasirTd>
-                        <KasirTd className="font-medium">
-                          {formatRupiah(p.revenue)}
-                        </KasirTd>
+              <CategoryGroupsContainer>
+              {topProductGroups.map((group) => {
+                const totalQty = group.items.reduce((sum, p) => sum + p.qty, 0);
+                const totalRevenue = group.items.reduce(
+                  (sum, p) => sum + p.revenue,
+                  0,
+                );
+
+                return (
+                <CategoryGroupSection
+                  key={group.categoryId ?? group.categoryName}
+                  categoryName={group.categoryName}
+                  itemCountLabel={translate("categoryItemCount").replace(
+                    "{count}",
+                    String(group.items.length),
+                  )}
+                  meta={`${totalQty} · ${formatRupiah(totalRevenue)}`}
+                >
+                  <table className={kasirCompactTableClass}>
+                    <thead className={kasirCompactTheadClass}>
+                      <tr>
+                        <KasirTh compact>Produk</KasirTh>
+                        <KasirTh compact>{translate("kasirSoldQty")}</KasirTh>
+                        <KasirTh compact>{translate("kasirRevenue")}</KasirTh>
                         {showGrossProfit && (
                           <>
-                            <KasirTd>
-                              {p.unitCost != null && p.unitCost > 0
-                                ? formatRupiah(p.unitCost)
-                                : "—"}
-                            </KasirTd>
-                            <KasirTd className="font-medium text-emerald-700 dark:text-emerald-400">
-                              {formatRupiah(
-                                p.grossProfit ?? p.revenue - (p.cogs ?? 0),
-                              )}
-                            </KasirTd>
+                            <KasirTh compact>{translate("kasirBuyPrice")}</KasirTh>
+                            <KasirTh compact>
+                              {translate("kasirGrossProfit")}
+                            </KasirTh>
                           </>
                         )}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </KasirTableShell>
+                    </thead>
+                    <tbody className={kasirCompactTbodyClass}>
+                      {group.items.map((p: TopProductRow) => (
+                        <tr key={p.productId} className={kasirCompactTrClass}>
+                          <KasirTd
+                            compact
+                            className="font-medium text-slate-900 dark:text-white"
+                          >
+                            {p.productName}
+                          </KasirTd>
+                          <KasirTd compact>{p.qty}</KasirTd>
+                          <KasirTd compact className="font-medium">
+                            {formatRupiah(p.revenue)}
+                          </KasirTd>
+                          {showGrossProfit && (
+                            <>
+                              <KasirTd compact>
+                                {p.unitCost != null && p.unitCost > 0
+                                  ? formatRupiah(p.unitCost)
+                                  : "—"}
+                              </KasirTd>
+                              <KasirTd
+                                compact
+                                className="font-medium text-emerald-700 dark:text-emerald-400"
+                              >
+                                {formatRupiah(
+                                  p.grossProfit ?? p.revenue - (p.cogs ?? 0),
+                                )}
+                              </KasirTd>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </CategoryGroupSection>
+              );
+              })}
+              </CategoryGroupsContainer>
             </div>
           )}
 

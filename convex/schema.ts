@@ -86,6 +86,8 @@ export const stockMovementType = v.union(
 const priceTierEntry = v.object({
   productId: v.id("products"),
   productName: v.string(),
+  categoryId: v.optional(v.id("productCategories")),
+  categoryName: v.string(),
   unitPrice: v.number(),
   qty: v.number(),
   revenue: v.number(),
@@ -98,6 +100,8 @@ const priceTierEntry = v.object({
 const topProductEntry = v.object({
   productId: v.id("products"),
   productName: v.string(),
+  categoryId: v.optional(v.id("productCategories")),
+  categoryName: v.string(),
   qty: v.number(),
   revenue: v.number(),
   cogs: v.optional(v.number()),
@@ -107,6 +111,8 @@ const topProductEntry = v.object({
 const stockReconEntry = v.object({
   productId: v.id("products"),
   productName: v.string(),
+  categoryId: v.optional(v.id("productCategories")),
+  categoryName: v.string(),
   openingQty: v.number(),
   receivedQty: v.number(),
   soldQtyFromLines: v.number(),
@@ -232,22 +238,36 @@ export default defineSchema({
     .index("by_token", ["token"])
     .index("by_userId", ["userId"]),
 
-  products: defineTable({
+  productCategories: defineTable({
     businessId: v.id("businesses"),
     name: v.string(),
-    type: productType,
-    sellPrice: v.number(),
-    rentalPricePerHour: v.optional(v.number()),
-    unit: v.string(),
-    trackExpiry: v.optional(v.boolean()),
-    defaultUnitCost: v.optional(v.number()),
-    unitsPerPurchaseUnit: v.optional(v.number()),
+    sortOrder: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_businessId", ["businessId"])
     .index("by_business_and_name", ["businessId", "name"]),
+
+  products: defineTable({
+    businessId: v.id("businesses"),
+    name: v.string(),
+    type: productType,
+    categoryId: v.optional(v.id("productCategories")),
+    sellPrice: v.number(),
+    rentalPricePerHour: v.optional(v.number()),
+    unit: v.string(),
+    trackExpiry: v.optional(v.boolean()),
+    defaultUnitCost: v.optional(v.number()),
+    unitsPerPurchaseUnit: v.optional(v.number()),
+    purchaseUnit: v.optional(v.string()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_businessId", ["businessId"])
+    .index("by_business_and_name", ["businessId", "name"])
+    .index("by_categoryId", ["categoryId"]),
 
   sellPriceHistory: defineTable({
     productId: v.id("products"),
@@ -406,6 +426,7 @@ export default defineSchema({
     qty: v.number(),
     qtyRemaining: v.number(),
     unitCost: v.number(),
+    isEstimated: v.optional(v.boolean()),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
   })
@@ -423,7 +444,12 @@ export default defineSchema({
     effectiveAt: v.number(),
   })
     .index("by_productId", ["productId"])
-    .index("by_businessId", ["businessId"]),
+    .index("by_businessId", ["businessId"])
+    .index("by_business_product_supplier", [
+      "businessId",
+      "productId",
+      "supplierId",
+    ]),
 
   saleLineCostLots: defineTable({
     saleLineId: v.id("saleLines"),

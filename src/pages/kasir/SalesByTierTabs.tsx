@@ -1,20 +1,26 @@
 import { useMemo, useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { useLanguage } from "../../core/context/LanguageContext";
+import { groupByCategory } from "../../core/utils/groupByCategory";
 import {
-  KasirTableShell,
+  CategoryGroupSection,
+  CategoryGroupsContainer,
+} from "../../core/components/categoryGroup";
+import {
   KasirTd,
   KasirTh,
-  kasirTableClass,
-  kasirTbodyClass,
-  kasirTheadClass,
-  kasirTrClass,
+  kasirCompactTableClass,
+  kasirCompactTheadClass,
+  kasirCompactTbodyClass,
+  kasirCompactTrClass,
 } from "./KasirTable";
 import { formatRupiah } from "./utils";
 
 export type PriceTierRow = {
   productId: Id<"products">;
   productName: string;
+  categoryId?: Id<"productCategories">;
+  categoryName?: string;
   unitPrice: number;
   qty: number;
   revenue: number;
@@ -30,6 +36,118 @@ type SalesTab = "retail" | "rental";
 interface SalesByTierTabsProps {
   tiers: PriceTierRow[];
   showGrossProfit?: boolean;
+}
+
+function TierTable({
+  tiers,
+  tab,
+  showGrossProfit,
+}: {
+  tiers: PriceTierRow[];
+  tab: SalesTab;
+  showGrossProfit: boolean;
+}) {
+  const { translate } = useLanguage();
+  const groups = useMemo(() => groupByCategory(tiers), [tiers]);
+
+  if (tiers.length === 0) {
+    return (
+      <p className="py-4 text-center text-sm text-slate-500">
+        {translate("kasirNoData")}
+      </p>
+    );
+  }
+
+  return (
+    <CategoryGroupsContainer>
+      {groups.map((group) => {
+        const totalRevenue = group.items.reduce((sum, tier) => sum + tier.revenue, 0);
+        const totalQty = group.items.reduce(
+          (sum, tier) =>
+            sum +
+            (tab === "rental" ? (tier.rentalHoursTotal ?? 0) : tier.qty),
+          0,
+        );
+
+        return (
+          <CategoryGroupSection
+            key={group.categoryId ?? group.categoryName}
+            categoryName={group.categoryName}
+            itemCountLabel={translate("categoryItemCount").replace(
+              "{count}",
+              String(group.items.length),
+            )}
+            meta={`${totalQty} · ${formatRupiah(totalRevenue)}`}
+          >
+            <table className={kasirCompactTableClass}>
+              <thead className={kasirCompactTheadClass}>
+                <tr>
+                  <KasirTh compact>Produk</KasirTh>
+                  <KasirTh compact>{translate("kasirPriceTier")}</KasirTh>
+                  {showGrossProfit && tab === "retail" && (
+                    <KasirTh compact>{translate("kasirBuyPrice")}</KasirTh>
+                  )}
+                  <KasirTh compact>
+                    {tab === "rental"
+                      ? translate("kasirSoldUnitHours")
+                      : translate("kasirSoldQty")}
+                  </KasirTh>
+                  <KasirTh compact>{translate("kasirRevenue")}</KasirTh>
+                  {showGrossProfit && (
+                    <KasirTh compact>{translate("kasirGrossProfit")}</KasirTh>
+                  )}
+                </tr>
+              </thead>
+              <tbody className={kasirCompactTbodyClass}>
+                {group.items.map((tier) => (
+                  <tr
+                    key={`${tier.productId}-${tier.unitPrice}`}
+                    className={kasirCompactTrClass}
+                  >
+                    <KasirTd
+                      compact
+                      className="font-medium text-slate-900 dark:text-white"
+                    >
+                      {tier.productName}
+                    </KasirTd>
+                    <KasirTd compact>
+                      {formatRupiah(tier.unitPrice)}
+                      {tab === "rental" ? translate("kasirPerHour") : ""}
+                    </KasirTd>
+                    {showGrossProfit && tab === "retail" && (
+                      <KasirTd compact>
+                        {tier.unitCost != null && tier.unitCost > 0
+                          ? formatRupiah(tier.unitCost)
+                          : "—"}
+                      </KasirTd>
+                    )}
+                    <KasirTd compact>
+                      {tab === "rental"
+                        ? (tier.rentalHoursTotal ?? 0)
+                        : tier.qty}
+                    </KasirTd>
+                    <KasirTd compact className="font-medium">
+                      {formatRupiah(tier.revenue)}
+                    </KasirTd>
+                    {showGrossProfit && (
+                      <KasirTd
+                        compact
+                        className="font-medium text-emerald-700 dark:text-emerald-400"
+                      >
+                        {formatRupiah(
+                          tier.grossProfit ?? tier.revenue - (tier.cogs ?? 0),
+                        )}
+                      </KasirTd>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CategoryGroupSection>
+        );
+      })}
+    </CategoryGroupsContainer>
+  );
 }
 
 export function SalesByTierTabs({
@@ -73,7 +191,7 @@ export function SalesByTierTabs({
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`rounded-t-lg px-3 py-2 text-sm font-medium transition-colors ${
+            className={`rounded-t-lg px-3 py-1.5 text-xs font-medium transition-colors ${
               tab === t.id
                 ? "border-b-2 border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
                 : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
@@ -81,78 +199,17 @@ export function SalesByTierTabs({
           >
             {t.label}
             {t.count > 0 && (
-              <span className="ml-1 text-xs text-slate-400">({t.count})</span>
+              <span className="ml-1 text-[10px] text-slate-400">({t.count})</span>
             )}
           </button>
         ))}
       </div>
 
-      {activeTiers.length === 0 ? (
-        <p className="py-4 text-center text-sm text-slate-500">
-          {translate("kasirNoData")}
-        </p>
-      ) : (
-        <KasirTableShell>
-          <table className={kasirTableClass}>
-            <thead className={kasirTheadClass}>
-              <tr>
-                <KasirTh>Produk</KasirTh>
-                <KasirTh>{translate("kasirPriceTier")}</KasirTh>
-                {showGrossProfit && tab === "retail" && (
-                  <KasirTh>{translate("kasirBuyPrice")}</KasirTh>
-                )}
-                <KasirTh>
-                  {tab === "rental"
-                    ? translate("kasirSoldUnitHours")
-                    : translate("kasirSoldQty")}
-                </KasirTh>
-                <KasirTh>{translate("kasirRevenue")}</KasirTh>
-                {showGrossProfit && (
-                  <KasirTh>{translate("kasirGrossProfit")}</KasirTh>
-                )}
-              </tr>
-            </thead>
-            <tbody className={kasirTbodyClass}>
-              {activeTiers.map((tier) => (
-                <tr
-                  key={`${tier.productId}-${tier.unitPrice}`}
-                  className={kasirTrClass}
-                >
-                  <KasirTd className="font-medium text-slate-900 dark:text-white">
-                    {tier.productName}
-                  </KasirTd>
-                  <KasirTd>
-                    {formatRupiah(tier.unitPrice)}
-                    {tab === "rental" ? translate("kasirPerHour") : ""}
-                  </KasirTd>
-                  {showGrossProfit && tab === "retail" && (
-                    <KasirTd>
-                      {tier.unitCost != null && tier.unitCost > 0
-                        ? formatRupiah(tier.unitCost)
-                        : "—"}
-                    </KasirTd>
-                  )}
-                  <KasirTd>
-                    {tab === "rental"
-                      ? (tier.rentalHoursTotal ?? 0)
-                      : tier.qty}
-                  </KasirTd>
-                  <KasirTd className="font-medium">
-                    {formatRupiah(tier.revenue)}
-                  </KasirTd>
-                  {showGrossProfit && (
-                    <KasirTd className="font-medium text-emerald-700 dark:text-emerald-400">
-                      {formatRupiah(
-                        tier.grossProfit ?? tier.revenue - (tier.cogs ?? 0),
-                      )}
-                    </KasirTd>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </KasirTableShell>
-      )}
+      <TierTable
+        tiers={activeTiers}
+        tab={tab}
+        showGrossProfit={showGrossProfit}
+      />
     </div>
   );
 }

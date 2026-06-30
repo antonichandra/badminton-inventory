@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { CategoryGroupedList } from "../../core/components/CategoryGroupedList";
 import { InputNumber } from "../../core/components/forms/InputNumber";
 import { Dropdown } from "../../core/components/forms/Dropdown";
 import { Button } from "../../core/components/ui/Button";
 import { useLanguage } from "../../core/context/LanguageContext";
 import { useToast } from "../../core/context/ToastContext";
+import { groupByCategory } from "../../core/utils/groupByCategory";
 
 type BusinessId = Id<"businesses">;
 
@@ -48,6 +51,8 @@ export function OpenShiftWizard({
   const assignees = assigneeData?.assignees ?? [];
   const usesOwnerFallback = assigneeData?.usesOwnerFallback ?? false;
   const products = retailProducts ?? [];
+  const productsLoaded = retailProducts !== undefined;
+  const hasProducts = products.length > 0;
 
   const assigneeOptions = useMemo(
     () =>
@@ -74,10 +79,14 @@ export function OpenShiftWizard({
         productId: product._id,
         name: product.name,
         unit: product.unit,
+        categoryId: product.categoryId,
+        categoryName: product.categoryName,
         qty: stockQty[product._id] ?? "0",
       })),
     [products, stockQty],
   );
+
+  const stockGroups = useMemo(() => groupByCategory(stockRows), [stockRows]);
 
   useEffect(() => {
     if (!suggestedOpening?.length || products.length === 0) return;
@@ -133,19 +142,43 @@ export function OpenShiftWizard({
       onComplete();
     } catch (error) {
       console.error(error);
-      const message =
-        error instanceof Error &&
-        error.message.startsWith("OPENING_UNIT_COST_REQUIRED:")
-          ? translate("kasirOpeningUnitCostRequired").replace(
-              "{name}",
-              error.message.split(":").slice(1).join(":"),
-            )
-          : translate("unexpectedError");
+      let message = translate("unexpectedError");
+      if (error instanceof Error) {
+        if (error.message.startsWith("OPENING_UNIT_COST_REQUIRED:")) {
+          message = translate("kasirOpeningUnitCostRequired").replace(
+            "{name}",
+            error.message.split(":").slice(1).join(":"),
+          );
+        } else if (error.message === "NO_RETAIL_PRODUCTS") {
+          message = translate("kasirNoProductsBlock");
+        }
+      }
       showToast({ type: "error", message });
     } finally {
       setIsSaving(false);
     }
   };
+
+  if (productsLoaded && !hasProducts) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
+        <h2 className="text-lg font-semibold text-amber-900 dark:text-amber-200">
+          {translate("kasirOpenShiftTitle")}
+        </h2>
+        <p className="mt-2 text-sm text-amber-800 dark:text-amber-300">
+          {translate("kasirNoProductsBlock")}
+        </p>
+        <div className="mt-4">
+          <Link
+            to="/master/produk"
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-transparent bg-emerald-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+          >
+            {translate("kasirGoToProducts")}
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -173,10 +206,7 @@ export function OpenShiftWizard({
             emptyMessage={translate("kasirNoStaff")}
           />
           <div className="flex justify-end">
-            <Button
-              onClick={() => setStep(1)}
-              disabled={!assignedStaffId}
-            >
+            <Button onClick={() => setStep(1)} disabled={!assignedStaffId}>
               {translate("kasirContinue")}
             </Button>
           </div>
@@ -197,59 +227,51 @@ export function OpenShiftWizard({
             <Button variant="ghost" onClick={() => setStep(0)}>
               {translate("cancel")}
             </Button>
-            <Button onClick={() => setStep(2)}>
-              {translate("kasirContinue")}
-            </Button>
+            <Button onClick={() => setStep(2)}>{translate("kasirContinue")}</Button>
           </div>
         </div>
       )}
 
       {step === 2 && (
         <div className="mt-6 space-y-4">
-          {products.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {translate("kasirNoProducts")}
-            </p>
-          ) : (
-            <>
-              <div className="flex justify-end gap-2">
-                {suggestedOpening && suggestedOpening.length > 0 && (
-                  <Button variant="outline" size="sm" onClick={handleFillSuggested}>
-                    {translate("kasirFillSuggested")}
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={handleFillZero}>
-                  {translate("kasirFillZero")}
-                </Button>
+          <div className="flex justify-end gap-2">
+            {suggestedOpening && suggestedOpening.length > 0 && (
+              <Button variant="outline" size="sm" onClick={handleFillSuggested}>
+                {translate("kasirFillSuggested")}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={handleFillZero}>
+              {translate("kasirFillZero")}
+            </Button>
+          </div>
+
+          <CategoryGroupedList
+            groups={stockGroups}
+            itemCountLabel={(count) =>
+              translate("categoryItemCount").replace("{count}", String(count))
+            }
+            renderItem={(row) => (
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-slate-900 dark:text-white">
+                    {row.name}
+                  </p>
+                  <p className="text-[10px] text-slate-500">{row.unit}</p>
+                </div>
+                <InputNumber
+                  variant="inline"
+                  value={row.qty}
+                  onChange={(value) =>
+                    setStockQty((prev) => ({
+                      ...prev,
+                      [row.productId]: value,
+                    }))
+                  }
+                  min={0}
+                />
               </div>
-              <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
-                {stockRows.map((row) => (
-                  <div
-                    key={row.productId}
-                    className="flex items-center justify-between gap-3 px-3 py-2.5"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-white">
-                        {row.name}
-                      </p>
-                      <p className="text-xs text-slate-500">{row.unit}</p>
-                    </div>
-                    <InputNumber
-                      variant="inline"
-                      value={row.qty}
-                      onChange={(value) =>
-                        setStockQty((prev) => ({
-                          ...prev,
-                          [row.productId]: value,
-                        }))
-                      }
-                      min={0}
-                    />
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+            )}
+          />
 
           <div className="flex justify-between gap-2">
             <Button variant="ghost" onClick={() => setStep(1)}>

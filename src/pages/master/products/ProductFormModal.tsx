@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { useMutation } from "convex/react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { Dropdown } from "../../../core/components/forms/Dropdown";
@@ -8,6 +9,7 @@ import { InputText } from "../../../core/components/forms/InputText";
 import { Modal } from "../../../core/components/ui/Modal";
 import { Button } from "../../../core/components/ui/Button";
 import { useLanguage } from "../../../core/context/LanguageContext";
+import { formatRupiah } from "../../kasir/utils";
 import type { ProductRow } from "./products.config";
 
 interface ProductFormModalProps {
@@ -28,18 +30,41 @@ export function ProductFormModal({
   const { translate } = useLanguage();
   const createProduct = useMutation(api.products.createProduct);
   const updateProduct = useMutation(api.products.updateProduct);
+  const categoryOptions = useQuery(api.productCategories.listCategoryOptions, {
+    sessionToken,
+  });
 
   const [name, setName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [type, setType] = useState<"RETAIL" | "RENTAL">("RETAIL");
   const [sellPrice, setSellPrice] = useState("0");
   const [rentalPrice, setRentalPrice] = useState("0");
   const [unit, setUnit] = useState("pcs");
+  const [purchaseUnit, setPurchaseUnit] = useState("");
   const [trackExpiry, setTrackExpiry] = useState(false);
   const [defaultUnitCost, setDefaultUnitCost] = useState("0");
+  const [defaultPackCost, setDefaultPackCost] = useState("0");
   const [unitsPerPurchaseUnit, setUnitsPerPurchaseUnit] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const packSize = useMemo(() => {
+    const parsed = Number(unitsPerPurchaseUnit);
+    return Number.isFinite(parsed) && parsed >= 1 ? parsed : 0;
+  }, [unitsPerPurchaseUnit]);
+
+  const hasPackConfig =
+    packSize >= 1 && purchaseUnit.trim().length > 0;
+
+  const unitCostPreview = useMemo(() => {
+    if (!hasPackConfig) {
+      return Number(defaultUnitCost) || 0;
+    }
+    const packCost = Number(defaultPackCost) || 0;
+    if (packCost <= 0) return 0;
+    return Math.round(packCost / packSize);
+  }, [defaultPackCost, defaultUnitCost, hasPackConfig, packSize]);
 
   useEffect(() => {
     if (!open) return;
@@ -50,24 +75,39 @@ export function ProductFormModal({
       setSellPrice(String(product.sellPrice));
       setRentalPrice(String(product.rentalPricePerHour ?? 0));
       setUnit(product.unit);
+      setPurchaseUnit(product.purchaseUnit ?? "");
       setTrackExpiry(product.trackExpiry ?? false);
-      setDefaultUnitCost(String(product.defaultUnitCost ?? 0));
+      const pack =
+        product.unitsPerPurchaseUnit != null &&
+        product.unitsPerPurchaseUnit >= 1;
+      const unitCost = product.defaultUnitCost ?? 0;
+      if (pack && product.purchaseUnit) {
+        setDefaultPackCost(String(unitCost * product.unitsPerPurchaseUnit!));
+        setDefaultUnitCost("0");
+      } else {
+        setDefaultUnitCost(String(unitCost));
+        setDefaultPackCost("0");
+      }
       setUnitsPerPurchaseUnit(
         product.unitsPerPurchaseUnit != null
           ? String(product.unitsPerPurchaseUnit)
           : "",
       );
       setIsActive(product.isActive);
+      setCategoryId(product.categoryId ?? "");
     } else {
       setName("");
       setType("RETAIL");
       setSellPrice("0");
       setRentalPrice("0");
       setUnit("pcs");
+      setPurchaseUnit("");
       setTrackExpiry(false);
       setDefaultUnitCost("0");
+      setDefaultPackCost("0");
       setUnitsPerPurchaseUnit("");
       setIsActive(true);
+      setCategoryId("");
     }
     setError(null);
   }, [open, product]);
@@ -77,9 +117,17 @@ export function ProductFormModal({
     setError(null);
 
     try {
-      const packSize = unitsPerPurchaseUnit.trim()
+      const packSizeValue = unitsPerPurchaseUnit.trim()
         ? Number(unitsPerPurchaseUnit)
         : undefined;
+      const purchaseUnitValue = purchaseUnit.trim() || undefined;
+
+      const resolvedUnitCost =
+        type === "RETAIL"
+          ? hasPackConfig
+            ? unitCostPreview
+            : Number(defaultUnitCost) || 0
+          : undefined;
 
       const payload = {
         sessionToken,
@@ -89,9 +137,13 @@ export function ProductFormModal({
         rentalPricePerHour: Number(rentalPrice) || 0,
         unit: type === "RENTAL" ? "jam" : unit,
         trackExpiry: type === "RETAIL" ? trackExpiry : false,
-        defaultUnitCost:
-          type === "RETAIL" ? Number(defaultUnitCost) || 0 : undefined,
-        unitsPerPurchaseUnit: type === "RETAIL" ? packSize : undefined,
+        defaultUnitCost: resolvedUnitCost,
+        unitsPerPurchaseUnit:
+          type === "RETAIL" ? packSizeValue : undefined,
+        purchaseUnit: type === "RETAIL" ? purchaseUnitValue : undefined,
+        categoryId: categoryId
+          ? (categoryId as Id<"productCategories">)
+          : undefined,
       };
 
       if (product) {
@@ -144,6 +196,32 @@ export function ProductFormModal({
         />
 
         <Dropdown
+          label={translate("productCategory")}
+          value={categoryId}
+          onChange={setCategoryId}
+          options={[
+            { value: "", label: translate("productCategoryNone") },
+            ...(categoryOptions ?? []).map((option: { value: string; label: string }) => ({
+              value: option.value,
+              label: option.label,
+            })),
+          ]}
+          placeholder={translate("productCategoryPlaceholder")}
+        />
+
+        {(categoryOptions?.length ?? 0) === 0 && (
+          <p className="text-xs text-slate-500">
+            {translate("productCategoryHint")}{" "}
+            <Link
+              to="/master/kategori-produk"
+              className="font-medium text-emerald-700 hover:underline dark:text-emerald-400"
+            >
+              {translate("menuKategoriProduk")}
+            </Link>
+          </p>
+        )}
+
+        <Dropdown
           label={translate("productColType")}
           value={type}
           onChange={(value) => setType(value as "RETAIL" | "RENTAL")}
@@ -164,27 +242,52 @@ export function ProductFormModal({
               format="currency"
               required
             />
-            <InputNumber
-              label={translate("productDefaultUnitCost")}
-              value={defaultUnitCost}
-              onChange={setDefaultUnitCost}
-              min={0}
-              format="currency"
+            <InputText
+              label={translate("productSellUnit")}
+              value={unit}
+              onChange={setUnit}
               required
+            />
+            <InputText
+              label={translate("productPurchaseUnit")}
+              value={purchaseUnit}
+              onChange={setPurchaseUnit}
+              placeholder="dus"
             />
             <InputNumber
               label={translate("productUnitsPerPurchaseUnit")}
               value={unitsPerPurchaseUnit}
               onChange={setUnitsPerPurchaseUnit}
               min={1}
-              placeholder="12"
+              step={1}
+              placeholder="50"
             />
-            <InputText
-              label={translate("productUnit")}
-              value={unit}
-              onChange={setUnit}
-              required
-            />
+            {hasPackConfig ? (
+              <>
+                <InputNumber
+                  label={translate("productDefaultPackCost")}
+                  value={defaultPackCost}
+                  onChange={setDefaultPackCost}
+                  min={0}
+                  format="currency"
+                />
+                {unitCostPreview > 0 && (
+                  <p className="text-xs text-slate-500">
+                    {translate("productDefaultUnitCostPreview")
+                      .replace("{unit}", unit)
+                      .replace("{price}", formatRupiah(unitCostPreview))}
+                  </p>
+                )}
+              </>
+            ) : (
+              <InputNumber
+                label={translate("productDefaultUnitCost")}
+                value={defaultUnitCost}
+                onChange={setDefaultUnitCost}
+                min={0}
+                format="currency"
+              />
+            )}
             <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"

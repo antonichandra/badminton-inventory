@@ -3,8 +3,29 @@ import type { FilterFieldConfig } from "../../../core/components/filters/types";
 import type { TableColumnConfig } from "../../../core/components/table/types";
 import { Badge } from "../../../core/components/table/Badge";
 import { IconButton } from "../../../core/components/ui/IconButton";
+import { cn } from "../../../core/utils/cn";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { formatRupiah } from "../../kasir/utils";
+
+function hasPackConfig(row: ProductRow): boolean {
+  return (
+    row.unitsPerPurchaseUnit != null &&
+    row.unitsPerPurchaseUnit >= 1 &&
+    (row.purchaseUnit?.trim() ?? "") !== ""
+  );
+}
+
+function formatPackSizeInfo(
+  template: string,
+  purchaseUnit: string,
+  count: number,
+  unit: string,
+): string {
+  return template
+    .replace("{purchaseUnit}", purchaseUnit)
+    .replace("{count}", String(count))
+    .replace("{unit}", unit);
+}
 
 export type ProductStatusFilter = "ACTIVE" | "INACTIVE";
 export type ProductTypeFilter = "RETAIL" | "RENTAL";
@@ -21,8 +42,11 @@ export interface ProductRow {
   trackExpiry?: boolean;
   defaultUnitCost?: number;
   unitsPerPurchaseUnit?: number;
+  purchaseUnit?: string;
   unitCost?: number | null;
   margin?: number | null;
+  categoryId?: Id<"productCategories">;
+  categoryName?: string;
 }
 
 interface ColumnLabels {
@@ -32,6 +56,7 @@ interface ColumnLabels {
   buyPrice: string;
   margin: string;
   unit: string;
+  packSizeInfo: string;
   trackExpiry: string;
   trackExpiryYes: string;
   trackExpiryNo: string;
@@ -59,10 +84,14 @@ interface FilterLabels {
   inactive: string;
   trackExpiryYes: string;
   trackExpiryNo: string;
+  category: string;
+  categoryPlaceholder: string;
+  uncategorized: string;
 }
 
 export function buildProductFilterFields(
   labels: FilterLabels,
+  categoryOptions: { value: string; label: string }[] = [],
 ): FilterFieldConfig[] {
   return [
     {
@@ -107,6 +136,19 @@ export function buildProductFilterFields(
         options: [
           { value: "TRACKED", label: labels.trackExpiryYes },
           { value: "NOT_TRACKED", label: labels.trackExpiryNo },
+        ],
+        maxDisplayTags: 2,
+      },
+    },
+    {
+      key: "categories",
+      type: "multi-dropdown",
+      label: labels.category,
+      placeholder: labels.categoryPlaceholder,
+      settings: {
+        options: [
+          { value: "__uncategorized__", label: labels.uncategorized },
+          ...categoryOptions,
         ],
         maxDisplayTags: 2,
       },
@@ -156,20 +198,43 @@ export function buildProductTableColumns(
       type: "custom",
       key: "buyPrice",
       label: labels.buyPrice,
-      render: (row) => (
-        <span className="text-sm text-slate-700 dark:text-slate-300">
-          {row.type === "RETAIL" && row.unitCost != null
-            ? formatRupiah(row.unitCost)
-            : "—"}
-        </span>
-      ),
+      render: (row) => {
+        if (row.type !== "RETAIL" || row.unitCost == null) {
+          return <span className="text-sm text-slate-400">—</span>;
+        }
+
+        const packConfigured = hasPackConfig(row);
+        const packSize = row.unitsPerPurchaseUnit ?? 0;
+
+        return (
+          <div className="text-sm text-slate-700 dark:text-slate-300">
+            <p>
+              {formatRupiah(row.unitCost)}
+              <span className="ml-1 text-xs text-slate-500">/ {row.unit}</span>
+            </p>
+            {packConfigured && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                {formatRupiah(row.unitCost * packSize)}
+                <span className="ml-1">/ {row.purchaseUnit}</span>
+              </p>
+            )}
+          </div>
+        );
+      },
     },
     {
       type: "custom",
       key: "margin",
       label: labels.margin,
       render: (row) => (
-        <span className="text-sm text-slate-700 dark:text-slate-300">
+        <span
+          className={cn(
+            "text-sm font-medium",
+            row.type === "RETAIL" && row.margin != null
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-slate-400",
+          )}
+        >
           {row.type === "RETAIL" && row.margin != null
             ? formatRupiah(row.margin)
             : "—"}
@@ -177,10 +242,34 @@ export function buildProductTableColumns(
       ),
     },
     {
-      type: "display",
+      type: "custom",
       key: "unit",
       label: labels.unit,
-      getValue: (row) => row.unit,
+      render: (row) => {
+        if (row.type !== "RETAIL") {
+          return (
+            <span className="text-sm text-slate-400">—</span>
+          );
+        }
+
+        const packConfigured = hasPackConfig(row);
+
+        return (
+          <div className="text-sm text-slate-700 dark:text-slate-300">
+            <p>{row.unit}</p>
+            {packConfigured && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                {formatPackSizeInfo(
+                  labels.packSizeInfo,
+                  row.purchaseUnit!,
+                  row.unitsPerPurchaseUnit!,
+                  row.unit,
+                )}
+              </p>
+            )}
+          </div>
+        );
+      },
     },
     {
       type: "custom",
