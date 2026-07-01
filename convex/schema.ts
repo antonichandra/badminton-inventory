@@ -136,6 +136,23 @@ const rollupProductEntry = v.object({
   cogs: v.number(),
 });
 
+const stockCardSnapshotItem = v.object({
+  productId: v.id("products"),
+  productName: v.string(),
+  categoryId: v.optional(v.id("productCategories")),
+  categoryName: v.string(),
+  unit: v.string(),
+  openingQty: v.number(),
+  receivedQty: v.number(),
+  writeOffQty: v.number(),
+  soldQty: v.number(),
+  expectedQty: v.number(),
+  countedQty: v.number(),
+  variance: v.number(),
+  missInputQty: v.number(),
+  overInputQty: v.number(),
+});
+
 export default defineSchema({
   roles: defineTable({
     name: v.string(),
@@ -517,6 +534,20 @@ export default defineSchema({
     unitCost: v.number(),
     isEstimated: v.boolean(),
   }).index("by_shiftId", ["shiftId"]),
+
+  stockCardSnapshots: defineTable({
+    businessId: v.id("businesses"),
+    shiftId: v.id("shifts"),
+    recordedBy: v.id("users"),
+    recordedAt: v.number(),
+    note: v.optional(v.string()),
+    missInputQtyTotal: v.number(),
+    overInputQtyTotal: v.number(),
+    items: v.array(stockCardSnapshotItem),
+    createdAt: v.number(),
+  })
+    .index("by_shiftId", ["shiftId"])
+    .index("by_businessId", ["businessId"]),
 
   businessDailyRollups: defineTable({
     businessId: v.id("businesses"),
