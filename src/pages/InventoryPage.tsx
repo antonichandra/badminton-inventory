@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { AlertTriangle, ChevronDown, ChevronRight, Pencil } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { AlertTriangle, ChevronDown, ChevronRight, ClipboardList, Pencil } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { InputDate } from "../core/components/forms/InputDate";
 import { InputText } from "../core/components/forms/InputText";
 import { PageHeader } from "../core/components/PageHeader";
+import { PageTopSection } from "../core/components/PageTopSection";
 import { PermissionGuard } from "../core/components/PermissionGuard";
 import { Button } from "../core/components/ui/Button";
 import { LoadingState } from "../core/components/ui/LoadingState";
@@ -31,6 +33,7 @@ import {
   kasirTrClass,
 } from "./kasir/KasirTable";
 import { formatRupiah } from "./kasir/utils";
+import { ExportStockCardPdfButton } from "./inventory/ExportStockCardPdfButton";
 
 type StockAlert = "empty" | "low" | "ok";
 
@@ -57,6 +60,7 @@ function fromDateInputValue(value: string): number | undefined {
 }
 
 export function InventoryPage() {
+  const navigate = useNavigate();
   const { translate, language } = useLanguage();
   const { sessionToken, role } = useAuth();
   const { activeBusinessId } = useBusiness();
@@ -78,6 +82,16 @@ export function InventoryPage() {
 
   const inventory = inventoryData?.products ?? [];
   const hasOpenShift = inventoryData?.hasOpenShift ?? false;
+
+  const stockCardContext = useQuery(
+    api.stockCards.getStockCardFormContext,
+    sessionToken && hasOpenShift
+      ? {
+          sessionToken,
+          businessId: activeBusinessId ?? undefined,
+        }
+      : "skip",
+  );
 
   const totalProducts = inventory.length;
   const totalQtyEstimated = useMemo(
@@ -114,10 +128,32 @@ export function InventoryPage() {
 
   return (
     <PermissionGuard permission="kasir">
-      <PageHeader
-        title={translate("inventoryPageTitle")}
-        subtitle={translate("inventoryPageSubtitle")}
-      />
+      <PageTopSection>
+        <PageHeader
+          embedded
+          title={translate("inventoryPageTitle")}
+          subtitle={translate("inventoryPageSubtitle")}
+        />
+        {hasOpenShift && stockCardContext && (
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="w-full shrink-0 sm:w-auto"
+              leftIcon={<ClipboardList className="h-4 w-4" />}
+              onClick={() => navigate("/stok/kartu-stok")}
+            >
+              {translate("stockCardFill")}
+            </Button>
+            {stockCardContext.canExportPdf && sessionToken && (
+              <ExportStockCardPdfButton
+                sessionToken={sessionToken}
+                businessId={activeBusinessId ?? undefined}
+              />
+            )}
+          </div>
+        )}
+      </PageTopSection>
 
       <div className="mb-4 max-w-md">
         <InputText

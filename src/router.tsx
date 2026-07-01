@@ -16,6 +16,7 @@ import { BusinessFormPage } from "./pages/business/BusinessFormPage";
 import { KasirPage } from "./pages/KasirPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { StockCardPage } from "./pages/inventory/StockCardPage";
 
 function RootLayout() {
   return (
@@ -51,6 +52,7 @@ export const router = createBrowserRouter([
           { path: "kasir", element: <KasirPage /> },
           { path: "analytics", element: <AnalyticsPage /> },
           { path: "stok", element: <InventoryPage /> },
+          { path: "stok/kartu-stok", element: <StockCardPage /> },
           { path: "master/produk", element: <ProdukPage /> },
           { path: "master/kategori-produk", element: <KategoriProdukPage /> },
           { path: "master/supplier", element: <SupplierPage /> },
