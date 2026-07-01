@@ -10,6 +10,7 @@ import { KategoriProdukPage } from "./pages/master/categories/KategoriProdukPage
 import { SupplierPage } from "./pages/master/suppliers/SupplierPage";
 import { RolePage } from "./pages/master/RolePage";
 import { AkunPage } from "./pages/master/AkunPage";
+import { KalkulatorPage } from "./pages/master/KalkulatorPage";
 import { BusinessListPage } from "./pages/business/BusinessListPage";
 import { BusinessFormPage } from "./pages/business/BusinessFormPage";
 import { KasirPage } from "./pages/KasirPage";
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
           { path: "master/supplier", element: <SupplierPage /> },
           { path: "master/role", element: <RolePage /> },
           { path: "master/akun", element: <AkunPage /> },
+          { path: "master/kalkulator", element: <KalkulatorPage /> },
         ],
       },
       {

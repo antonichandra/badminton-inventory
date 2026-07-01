@@ -47,6 +47,12 @@ export const MENU_CONFIG: MenuItem[] = [
         path: "/master/akun",
         permission: "master_akun",
       },
+      {
+        id: "master-kalkulator",
+        labelKey: "menuKalkulator",
+        path: "/master/kalkulator",
+        permission: "kasir",
+      },
     ],
   },
 ];

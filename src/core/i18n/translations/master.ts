@@ -93,6 +93,20 @@ export const master = {
     usersRegisterPendingAdminSelf: "Pilih akun Google orang lain, bukan akun Anda sendiri.",
     usersRegisterPendingAdminForbidden: "Anda tidak punya izin untuk mendaftarkan admin.",
     usersRegisterPendingAdminUnauthorized: "Sesi habis. Silakan login ulang.",
+    pageKalkulatorTitle: "Kalkulator Shift",
+    pageKalkulatorSubtitle:
+      "Hitung rekonsiliasi kas dari saldo awal, penjualan, QRIS, dan pengeluaran.",
+    calcInputTitle: "Input",
+    calcRevenueTitle: "Ringkasan pendapatan",
+    calcRetailRevenue: "Pendapatan retail",
+    calcRentalRevenue: "Pendapatan sewa",
+    calcTotalRevenue: "Total pendapatan",
+    calcEstimatedCashSales: "Estimasi penjualan cash",
+    calcTotalReconTitle: "Rekonsiliasi total (cash + QRIS)",
+    calcTotalExpected: "Total seharusnya",
+    calcTotalActual: "Total aktual",
+    calcHint:
+      "Rumus sama dengan tutup shift: kas di laci = kas awal + total pendapatan + penerimaan − QRIS − pengeluaran.",
   },
   EN: {
     pageProdukTitle: "Master Products",
@@ -188,5 +202,19 @@ export const master = {
     usersRegisterPendingAdminSelf: "Choose someone else's Google account, not your own.",
     usersRegisterPendingAdminForbidden: "You do not have permission to register admins.",
     usersRegisterPendingAdminUnauthorized: "Session expired. Please sign in again.",
+    pageKalkulatorTitle: "Shift Calculator",
+    pageKalkulatorSubtitle:
+      "Compute cash reconciliation from opening balance, sales, QRIS, and expenses.",
+    calcInputTitle: "Inputs",
+    calcRevenueTitle: "Revenue summary",
+    calcRetailRevenue: "Retail revenue",
+    calcRentalRevenue: "Rental revenue",
+    calcTotalRevenue: "Total revenue",
+    calcEstimatedCashSales: "Estimated cash sales",
+    calcTotalReconTitle: "Total reconciliation (cash + QRIS)",
+    calcTotalExpected: "Total expected",
+    calcTotalActual: "Total actual",
+    calcHint:
+      "Same formula as shift close: cash in drawer = opening + total revenue + income − QRIS − expenses.",
   },
 } as const;
