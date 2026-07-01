@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
+  Calculator,
   Database,
   Layers,
   Receipt,
@@ -22,5 +23,6 @@ export const MENU_ICONS: Record<string, LucideIcon> = {
   "master-supplier": Truck,
   "master-role": Shield,
   "master-akun": Users,
+  "master-kalkulator": Calculator,
   analytics: Receipt,
 };
