@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Check, Pencil } from "lucide-react";
+import { Check, Pencil, Trash2 } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { formatDateOnly, formatDateTime } from "../../../core/utils/formatDate";
@@ -21,6 +21,8 @@ interface SupplierReceiptDetailSheetProps {
   receiptId: Id<"stockReceipts"> | null;
   onMarkPaid?: (row: SupplierReceiptRow) => void;
   markingId?: Id<"stockReceipts"> | null;
+  onDelete?: (row: SupplierReceiptRow) => void;
+  deletingId?: Id<"stockReceipts"> | null;
 }
 
 export function SupplierReceiptDetailSheet({
@@ -30,6 +32,8 @@ export function SupplierReceiptDetailSheet({
   receiptId,
   onMarkPaid,
   markingId,
+  onDelete,
+  deletingId,
 }: SupplierReceiptDetailSheetProps) {
   const { translate, language } = useLanguage();
   const { showToast } = useToast();
@@ -153,6 +157,33 @@ export function SupplierReceiptDetailSheet({
           }}
         >
           {translate("supplierReceiptMarkPaid")}
+        </Button>
+      )}
+      {detail.canDelete !== false && !isEditing && onDelete && (
+        <Button
+          className="w-full"
+          variant="outline"
+          leftIcon={<Trash2 className="h-4 w-4" />}
+          loading={deletingId === receiptId}
+          disabled={deletingId !== null || markingId !== null}
+          onClick={() =>
+            onDelete({
+              _id: detail._id,
+              createdAt: detail.createdAt,
+              supplierId: detail.supplierId,
+              supplierName: detail.supplierName,
+              totalAmount: detail.totalAmount,
+              dueAt: detail.dueAt,
+              supplierPaymentStatus: detail.supplierPaymentStatus,
+              paidAt: detail.paidAt,
+              shiftId: detail.shiftId,
+              itemCount: detail.items.length,
+              note: detail.note,
+              canDelete: detail.canDelete,
+            })
+          }
+        >
+          {translate("supplierReceiptDelete")}
         </Button>
       )}
     </div>

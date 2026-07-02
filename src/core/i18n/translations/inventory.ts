@@ -243,6 +243,15 @@ export const inventory = {
     supplierReceiptEditCosts: "Ubah harga",
     supplierReceiptSaveCosts: "Simpan harga",
     supplierReceiptCostsUpdated: "Harga penerimaan diperbarui.",
+    supplierReceiptDelete: "Hapus",
+    supplierReceiptDeleteTitle: "Hapus penerimaan barang?",
+    supplierReceiptDeleteDesc:
+      "Penerimaan akan dihapus permanen dan tidak dapat dikembalikan. Stok dari penerimaan ini akan dikurangi. Jika sebagian stok sudah terpakai, sisa konsumsi diperlakukan sebagai hutang stok (estimasi HPP).",
+    supplierReceiptDeleteSuccess: "Penerimaan barang dihapus",
+    supplierReceiptDeleteOpening:
+      "Penerimaan saldo awal tidak dapat dihapus",
+    supplierReceiptDeleteClosedShift:
+      "Tidak dapat menghapus penerimaan pada shift yang sudah ditutup",
     kasirOpeningUnitCostRequired:
       "Set harga beli default di Master Produk untuk {name}",
     kasirSoldPhysical: "Terjual (fisik)",
@@ -658,6 +667,15 @@ export const inventory = {
     supplierReceiptEditCosts: "Edit prices",
     supplierReceiptSaveCosts: "Save prices",
     supplierReceiptCostsUpdated: "Receipt prices updated.",
+    supplierReceiptDelete: "Delete",
+    supplierReceiptDeleteTitle: "Delete stock receipt?",
+    supplierReceiptDeleteDesc:
+      "This receipt will be permanently deleted and cannot be undone. Stock from this receipt will be removed. If some stock was already consumed, the remaining consumption is treated as stock debt (estimated COGS).",
+    supplierReceiptDeleteSuccess: "Stock receipt deleted",
+    supplierReceiptDeleteOpening:
+      "Opening balance receipts cannot be deleted",
+    supplierReceiptDeleteClosedShift:
+      "Cannot delete receipts from a closed shift",
     kasirOpeningUnitCostRequired:
       "Set default buy price in Master Products for {name}",
     kasirSoldPhysical: "Sold (physical)",

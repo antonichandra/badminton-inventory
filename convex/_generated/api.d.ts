@@ -35,6 +35,7 @@ import type * as lib_staffAssignmentHelpers from "../lib/staffAssignmentHelpers.
 import type * as lib_staffInvitationHelpers from "../lib/staffInvitationHelpers.js";
 import type * as lib_staffUserCleanup from "../lib/staffUserCleanup.js";
 import type * as lib_stockCardHelpers from "../lib/stockCardHelpers.js";
+import type * as lib_stockReceiptDeleteHelpers from "../lib/stockReceiptDeleteHelpers.js";
 import type * as lib_supplierProductHelpers from "../lib/supplierProductHelpers.js";
 import type * as lib_userEditAccess from "../lib/userEditAccess.js";
 import type * as lib_usersAccess from "../lib/usersAccess.js";
@@ -90,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   "lib/staffInvitationHelpers": typeof lib_staffInvitationHelpers;
   "lib/staffUserCleanup": typeof lib_staffUserCleanup;
   "lib/stockCardHelpers": typeof lib_stockCardHelpers;
+  "lib/stockReceiptDeleteHelpers": typeof lib_stockReceiptDeleteHelpers;
   "lib/supplierProductHelpers": typeof lib_supplierProductHelpers;
   "lib/userEditAccess": typeof lib_userEditAccess;
   "lib/usersAccess": typeof lib_usersAccess;

@@ -42,6 +42,7 @@ import {
   loadShiftWriteOffs,
 } from "./lib/shiftDetailHelpers";
 import { createOpeningBalanceBatch } from "./lib/openingStockHelpers";
+import { deleteStockReceiptCompletely, isOpeningBalanceSupplier } from "./lib/stockReceiptDeleteHelpers";
 import { assertProductsLinkedToSupplier } from "./lib/supplierProductHelpers";
 import {
   calculateLineTotal,
@@ -1531,6 +1532,29 @@ export const markStockReceiptPaid = mutation({
   },
 });
 
+export const deleteStockReceipt = mutation({
+  args: {
+    sessionToken: v.string(),
+    receiptId: v.id("stockReceipts"),
+  },
+  handler: async (ctx, args) => {
+    const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
+    if (!isAdmin(role) && !isSuperAdmin(role)) {
+      throw new Error("FORBIDDEN");
+    }
+    assertAcl(role, "master_produk");
+
+    const receipt = await ctx.db.get(args.receiptId);
+    if (!receipt) {
+      throw new Error("RECEIPT_NOT_FOUND");
+    }
+
+    await assertBusinessAccess(ctx, user, role, receipt.businessId);
+
+    return deleteStockReceiptCompletely(ctx, args.receiptId);
+  },
+});
+
 export const listStockReceipts = query({
   args: {
     sessionToken: v.string(),
@@ -1582,10 +1606,14 @@ export const listStockReceipts = query({
       const enriched = [];
       for (const receipt of receipts) {
         const supplier = await ctx.db.get(receipt.supplierId);
+        const shift = await ctx.db.get(receipt.shiftId);
         const items = await ctx.db
           .query("stockReceiptItems")
           .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
           .collect();
+
+        const canDelete =
+          !isOpeningBalanceSupplier(supplier) && shift?.status !== "CLOSED";
 
         enriched.push({
           _id: receipt._id,
@@ -1599,6 +1627,7 @@ export const listStockReceipts = query({
           shiftId: receipt.shiftId,
           itemCount: items.length,
           note: receipt.note,
+          canDelete,
         });
       }
 
@@ -1643,6 +1672,7 @@ export const getStockReceiptDetail = query({
 
     const supplier = await ctx.db.get(receipt.supplierId);
     const recorder = await ctx.db.get(receipt.recordedBy);
+    const shift = await ctx.db.get(receipt.shiftId);
     const items = await ctx.db
       .query("stockReceiptItems")
       .withIndex("by_receiptId", (q) => q.eq("receiptId", receipt._id))
@@ -1676,6 +1706,8 @@ export const getStockReceiptDetail = query({
       shiftId: receipt.shiftId,
       note: receipt.note,
       recordedByName: recorder?.name ?? "—",
+      canDelete:
+        !isOpeningBalanceSupplier(supplier) && shift?.status !== "CLOSED",
       items: enrichedItems,
     };
   },

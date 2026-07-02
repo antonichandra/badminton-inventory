@@ -1,4 +1,4 @@
-import { Check, Package, Pencil } from "lucide-react";
+import { Check, Package, Pencil, Trash2 } from "lucide-react";
 import type { FilterFieldConfig } from "../../../core/components/filters/types";
 import { Badge } from "../../../core/components/table/Badge";
 import type { TableColumnConfig } from "../../../core/components/table/types";
@@ -24,6 +24,7 @@ export interface SupplierReceiptRow {
   shiftId: Id<"shifts">;
   itemCount: number;
   note?: string;
+  canDelete?: boolean;
 }
 
 export interface SupplierRow {
@@ -172,6 +173,7 @@ interface ReceiptColumnLabels {
   overdue: string;
   markPaid: string;
   detail: string;
+  delete: string;
 }
 
 export function buildSupplierReceiptTableColumns(
@@ -179,7 +181,9 @@ export function buildSupplierReceiptTableColumns(
   language: AppLanguage,
   onMarkPaid: (row: SupplierReceiptRow) => void,
   onViewDetail: (row: SupplierReceiptRow) => void,
+  onDelete: (row: SupplierReceiptRow) => void,
   markingId: Id<"stockReceipts"> | null,
+  deletingId: Id<"stockReceipts"> | null,
 ): TableColumnConfig<SupplierReceiptRow>[] {
   const now = Date.now();
 
@@ -252,10 +256,22 @@ export function buildSupplierReceiptTableColumns(
               variant="outline"
               leftIcon={<Check className="h-3.5 w-3.5" />}
               loading={markingId === row._id}
-              disabled={markingId !== null}
+              disabled={markingId !== null || deletingId !== null}
               onClick={() => onMarkPaid(row)}
             >
               {labels.markPaid}
+            </Button>
+          ) : null}
+          {row.canDelete !== false ? (
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+              loading={deletingId === row._id}
+              disabled={markingId !== null || deletingId !== null}
+              onClick={() => onDelete(row)}
+            >
+              {labels.delete}
             </Button>
           ) : null}
         </div>
