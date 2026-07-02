@@ -36,6 +36,12 @@ export const MENU_CONFIG: MenuItem[] = [
         permission: "master_produk",
       },
       {
+        id: "master-penerimaan-barang",
+        labelKey: "menuPenerimaanBarang",
+        path: "/master/penerimaan-barang",
+        permissions: ["master_produk", "kasir"],
+      },
+      {
         id: "master-role",
         labelKey: "menuRole",
         path: "/master/role",

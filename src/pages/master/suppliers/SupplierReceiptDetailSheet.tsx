@@ -19,6 +19,7 @@ interface SupplierReceiptDetailSheetProps {
   onClose: () => void;
   sessionToken: string;
   receiptId: Id<"stockReceipts"> | null;
+  canManage: boolean;
   onMarkPaid?: (row: SupplierReceiptRow) => void;
   markingId?: Id<"stockReceipts"> | null;
   onDelete?: (row: SupplierReceiptRow) => void;
@@ -30,6 +31,7 @@ export function SupplierReceiptDetailSheet({
   onClose,
   sessionToken,
   receiptId,
+  canManage,
   onMarkPaid,
   markingId,
   onDelete,
@@ -100,94 +102,95 @@ export function SupplierReceiptDetailSheet({
     }
   };
 
-  const footer = detail ? (
-    <div className="flex flex-col gap-2">
-      {isEditing ? (
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            className="flex-1"
-            onClick={() => setIsEditing(false)}
-            disabled={isSavingCosts}
-          >
-            {translate("cancel")}
-          </Button>
-          <Button
-            className="flex-1"
-            onClick={() => void handleSaveCosts()}
-            loading={isSavingCosts}
-          >
-            {translate("supplierReceiptSaveCosts")}
-          </Button>
-        </div>
-      ) : (
-        <Button
-          variant="outline"
-          className="w-full"
-          leftIcon={<Pencil className="h-4 w-4" />}
-          onClick={() => setIsEditing(true)}
-        >
-          {translate("supplierReceiptEditCosts")}
-        </Button>
-      )}
-      {detail.supplierPaymentStatus === "UNPAID" && !isEditing && (
-        <Button
-          className="w-full"
-          variant="primary"
-          leftIcon={<Check className="h-4 w-4" />}
-          loading={markingId === receiptId}
-          onClick={() => {
-            if (onMarkPaid && detail) {
-              onMarkPaid({
-                _id: detail._id,
-                createdAt: detail.createdAt,
-                supplierId: detail.supplierId,
-                supplierName: detail.supplierName,
-                totalAmount: detail.totalAmount,
-                dueAt: detail.dueAt,
-                supplierPaymentStatus: detail.supplierPaymentStatus,
-                paidAt: detail.paidAt,
-                shiftId: detail.shiftId,
-                itemCount: detail.items.length,
-                note: detail.note,
-              });
-            } else {
-              void handleMarkPaid();
-            }
-          }}
-        >
-          {translate("supplierReceiptMarkPaid")}
-        </Button>
-      )}
-      {detail.canDelete !== false && !isEditing && onDelete && (
-        <Button
-          className="w-full"
-          variant="outline"
-          leftIcon={<Trash2 className="h-4 w-4" />}
-          loading={deletingId === receiptId}
-          disabled={deletingId !== null || markingId !== null}
-          onClick={() =>
-            onDelete({
-              _id: detail._id,
-              createdAt: detail.createdAt,
-              supplierId: detail.supplierId,
-              supplierName: detail.supplierName,
-              totalAmount: detail.totalAmount,
-              dueAt: detail.dueAt,
-              supplierPaymentStatus: detail.supplierPaymentStatus,
-              paidAt: detail.paidAt,
-              shiftId: detail.shiftId,
-              itemCount: detail.items.length,
-              note: detail.note,
-              canDelete: detail.canDelete,
-            })
-          }
-        >
-          {translate("supplierReceiptDelete")}
-        </Button>
-      )}
-    </div>
-  ) : undefined;
+  const footer =
+    detail && canManage ? (
+      <div className="flex flex-col gap-2">
+        {isEditing ? (
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setIsEditing(false)}
+              disabled={isSavingCosts}
+            >
+              {translate("cancel")}
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => void handleSaveCosts()}
+              loading={isSavingCosts}
+            >
+              {translate("supplierReceiptSaveCosts")}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              leftIcon={<Pencil className="h-4 w-4" />}
+              onClick={() => setIsEditing(true)}
+            >
+              {translate("supplierReceiptEditCosts")}
+            </Button>
+            {detail.supplierPaymentStatus === "UNPAID" ? (
+              <Button
+                variant="primary"
+                leftIcon={<Check className="h-4 w-4" />}
+                loading={markingId === receiptId}
+                onClick={() => {
+                  if (onMarkPaid && detail) {
+                    onMarkPaid({
+                      _id: detail._id,
+                      createdAt: detail.createdAt,
+                      supplierId: detail.supplierId,
+                      supplierName: detail.supplierName,
+                      totalAmount: detail.totalAmount,
+                      dueAt: detail.dueAt,
+                      supplierPaymentStatus: detail.supplierPaymentStatus,
+                      paidAt: detail.paidAt,
+                      shiftId: detail.shiftId,
+                      itemCount: detail.items.length,
+                      note: detail.note,
+                      canDelete: detail.canDelete,
+                    });
+                  } else {
+                    void handleMarkPaid();
+                  }
+                }}
+              >
+                {translate("supplierReceiptMarkPaid")}
+              </Button>
+            ) : null}
+            {detail.canDelete !== false && onDelete ? (
+              <Button
+                variant="outline"
+                leftIcon={<Trash2 className="h-4 w-4" />}
+                loading={deletingId === receiptId}
+                disabled={deletingId !== null || markingId !== null}
+                onClick={() =>
+                  onDelete({
+                    _id: detail._id,
+                    createdAt: detail.createdAt,
+                    supplierId: detail.supplierId,
+                    supplierName: detail.supplierName,
+                    totalAmount: detail.totalAmount,
+                    dueAt: detail.dueAt,
+                    supplierPaymentStatus: detail.supplierPaymentStatus,
+                    paidAt: detail.paidAt,
+                    shiftId: detail.shiftId,
+                    itemCount: detail.items.length,
+                    note: detail.note,
+                    canDelete: detail.canDelete,
+                  })
+                }
+              >
+                {translate("supplierReceiptDelete")}
+              </Button>
+            ) : null}
+          </div>
+        )}
+      </div>
+    ) : undefined;
 
   return (
     <BottomSheet

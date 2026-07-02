@@ -18,6 +18,7 @@ import { SupplierReceiptDetailSheet } from "./SupplierReceiptDetailSheet";
 
 interface SupplierReceiptsPanelProps {
   sessionToken: string;
+  canManage: boolean;
 }
 
 function getDeleteErrorMessage(
@@ -35,7 +36,10 @@ function getDeleteErrorMessage(
   return translate("unexpectedError");
 }
 
-export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelProps) {
+export function SupplierReceiptsPanel({
+  sessionToken,
+  canManage,
+}: SupplierReceiptsPanelProps) {
   const { translate, language } = useLanguage();
   const { activeBusinessId } = useBusiness();
   const { showToast } = useToast();
@@ -66,6 +70,8 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
 
   const handleMarkPaid = useCallback(
     async (row: SupplierReceiptRow) => {
+      if (!canManage) return;
+
       setMarkingId(row._id);
       try {
         await markPaid({ sessionToken, receiptId: row._id });
@@ -80,15 +86,19 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
         setMarkingId(null);
       }
     },
-    [markPaid, sessionToken, showToast, translate],
+    [canManage, markPaid, sessionToken, showToast, translate],
   );
 
-  const handleDeleteRequest = useCallback((row: SupplierReceiptRow) => {
-    setDeleteTarget(row);
-  }, []);
+  const handleDeleteRequest = useCallback(
+    (row: SupplierReceiptRow) => {
+      if (!canManage) return;
+      setDeleteTarget(row);
+    },
+    [canManage],
+  );
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !canManage) return;
 
     setDeletingId(deleteTarget._id);
     try {
@@ -111,6 +121,7 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
       setDeletingId(null);
     }
   }, [
+    canManage,
     deleteReceipt,
     deleteTarget,
     detailReceiptId,
@@ -141,8 +152,10 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
         handleDeleteRequest,
         markingId,
         deletingId,
+        canManage,
       ),
     [
+      canManage,
       deletingId,
       handleDeleteRequest,
       handleMarkPaid,
@@ -187,25 +200,28 @@ export function SupplierReceiptsPanel({ sessionToken }: SupplierReceiptsPanelPro
         onClose={() => setDetailReceiptId(null)}
         sessionToken={sessionToken}
         receiptId={detailReceiptId}
-        onMarkPaid={handleMarkPaid}
+        canManage={canManage}
+        onMarkPaid={canManage ? handleMarkPaid : undefined}
         markingId={markingId}
-        onDelete={handleDeleteRequest}
+        onDelete={canManage ? handleDeleteRequest : undefined}
         deletingId={deletingId}
       />
 
-      <ConfirmModal
-        open={deleteTarget !== null}
-        onClose={() => {
-          if (!deletingId) setDeleteTarget(null);
-        }}
-        onConfirm={() => void handleConfirmDelete()}
-        title={translate("supplierReceiptDeleteTitle")}
-        description={translate("supplierReceiptDeleteDesc")}
-        confirmLabel={translate("supplierReceiptDelete")}
-        cancelLabel={translate("cancel")}
-        loading={deletingId !== null}
-        confirmVariant="danger"
-      />
+      {canManage ? (
+        <ConfirmModal
+          open={deleteTarget !== null}
+          onClose={() => {
+            if (!deletingId) setDeleteTarget(null);
+          }}
+          onConfirm={() => void handleConfirmDelete()}
+          title={translate("supplierReceiptDeleteTitle")}
+          description={translate("supplierReceiptDeleteDesc")}
+          confirmLabel={translate("supplierReceiptDelete")}
+          cancelLabel={translate("cancel")}
+          loading={deletingId !== null}
+          confirmVariant="danger"
+        />
+      ) : null}
     </div>
   );
 }
