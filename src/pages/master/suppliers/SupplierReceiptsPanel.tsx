@@ -7,6 +7,7 @@ import { Button } from "../../../core/components/ui/Button";
 import { ConfirmModal } from "../../../core/components/ui/ConfirmModal";
 import { useBusiness } from "../../../core/context/BusinessContext";
 import { useLanguage } from "../../../core/context/LanguageContext";
+import type { TranslationKey } from "../../../core/i18n";
 import { useToast } from "../../../core/context/ToastContext";
 import {
   buildSupplierReceiptTableColumns,
@@ -21,7 +22,7 @@ interface SupplierReceiptsPanelProps {
 
 function getDeleteErrorMessage(
   error: unknown,
-  translate: (key: string) => string,
+  translate: (key: TranslationKey) => string,
 ) {
   if (error instanceof Error) {
     if (error.message === "RECEIPT_CANNOT_DELETE_OPENING") {
