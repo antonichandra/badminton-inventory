@@ -1565,10 +1565,7 @@ export const listStockReceipts = query({
   handler: async (ctx, args) => {
     try {
       const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
-      if (!isAdmin(role) && !isSuperAdmin(role)) {
-        return [];
-      }
-      if (!hasAcl(role, "master_produk")) {
+      if (!hasAcl(role, "master_produk") && !hasAcl(role, "kasir")) {
         return [];
       }
 
@@ -1603,6 +1600,8 @@ export const listStockReceipts = query({
         receipts = receipts.filter((r) => r.supplierId === args.supplierId);
       }
 
+      const userCanManageReceipts = isAdmin(role) || isSuperAdmin(role);
+
       const enriched = [];
       for (const receipt of receipts) {
         const supplier = await ctx.db.get(receipt.supplierId);
@@ -1613,7 +1612,9 @@ export const listStockReceipts = query({
           .collect();
 
         const canDelete =
-          !isOpeningBalanceSupplier(supplier) && shift?.status !== "CLOSED";
+          userCanManageReceipts &&
+          !isOpeningBalanceSupplier(supplier) &&
+          shift?.status !== "CLOSED";
 
         enriched.push({
           _id: receipt._id,
@@ -1656,10 +1657,7 @@ export const getStockReceiptDetail = query({
   },
   handler: async (ctx, args) => {
     const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
-    if (!isAdmin(role) && !isSuperAdmin(role)) {
-      throw new Error("FORBIDDEN");
-    }
-    if (!hasAcl(role, "master_produk")) {
+    if (!hasAcl(role, "master_produk") && !hasAcl(role, "kasir")) {
       throw new Error("FORBIDDEN");
     }
 
@@ -1707,7 +1705,9 @@ export const getStockReceiptDetail = query({
       note: receipt.note,
       recordedByName: recorder?.name ?? "—",
       canDelete:
-        !isOpeningBalanceSupplier(supplier) && shift?.status !== "CLOSED",
+        (isAdmin(role) || isSuperAdmin(role)) &&
+        !isOpeningBalanceSupplier(supplier) &&
+        shift?.status !== "CLOSED",
       items: enrichedItems,
     };
   },

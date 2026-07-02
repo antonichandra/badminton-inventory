@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Building2,
   Calculator,
+  ClipboardList,
   Database,
   Layers,
   Receipt,
@@ -21,6 +22,7 @@ export const MENU_ICONS: Record<string, LucideIcon> = {
   "master-produk": ShoppingBag,
   "master-kategori-produk": Tags,
   "master-supplier": Truck,
+  "master-penerimaan-barang": ClipboardList,
   "master-role": Shield,
   "master-akun": Users,
   "master-kalkulator": Calculator,

@@ -178,7 +178,7 @@ export function SupplierPage() {
       )}
 
       {activeTab === "receipts" && isAdmin && sessionToken ? (
-        <SupplierReceiptsPanel sessionToken={sessionToken} />
+        <SupplierReceiptsPanel sessionToken={sessionToken} canManage={isAdmin} />
       ) : (
         <>
           <div className="mb-4">

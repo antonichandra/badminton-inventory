@@ -184,6 +184,7 @@ export function buildSupplierReceiptTableColumns(
   onDelete: (row: SupplierReceiptRow) => void,
   markingId: Id<"stockReceipts"> | null,
   deletingId: Id<"stockReceipts"> | null,
+  canManage: boolean,
 ): TableColumnConfig<SupplierReceiptRow>[] {
   const now = Date.now();
 
@@ -250,7 +251,7 @@ export function buildSupplierReceiptTableColumns(
           <Button size="sm" variant="ghost" onClick={() => onViewDetail(row)}>
             {labels.detail}
           </Button>
-          {row.supplierPaymentStatus === "UNPAID" ? (
+          {canManage && row.supplierPaymentStatus === "UNPAID" ? (
             <Button
               size="sm"
               variant="outline"
@@ -262,7 +263,7 @@ export function buildSupplierReceiptTableColumns(
               {labels.markPaid}
             </Button>
           ) : null}
-          {row.canDelete !== false ? (
+          {canManage && row.canDelete !== false ? (
             <Button
               size="sm"
               variant="outline"
