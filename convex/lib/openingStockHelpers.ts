@@ -1,7 +1,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 
-const OPENING_SUPPLIER_NAME = "Saldo Awal";
+export const OPENING_SUPPLIER_NAME = "Saldo Awal";
 
 async function getOrCreateOpeningBalanceSupplier(
   ctx: MutationCtx,
