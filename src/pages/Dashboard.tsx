@@ -94,8 +94,8 @@ export function DashboardPage() {
   const shiftPending = kasirContext?.shiftStatus === "CLOSE_PENDING";
   const pendingCloseCount = kasirContext?.pendingCloseCount ?? 0;
 
-  const outOfStock = (lowStock ?? []).filter((item) => item.qtyOnHand === 0);
-  const lowStockItems = (lowStock ?? []).filter((item) => item.qtyOnHand > 0);
+  const outOfStock = (lowStock ?? []).filter((item) => item.qtyEstimated === 0);
+  const lowStockItems = (lowStock ?? []).filter((item) => item.qtyEstimated > 0);
   const alertCount =
     outOfStock.length +
     (pendingCloseCount > 0 ? 1 : 0);
@@ -292,7 +292,7 @@ export function DashboardPage() {
                     <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                     <span className="flex-1">{item.productName}</span>
                     <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                      {item.qtyOnHand} {item.unit}
+                      {item.qtyEstimated} {item.unit}
                     </span>
                   </li>
                 ))}
@@ -373,7 +373,7 @@ export function DashboardPage() {
                     {batch.productName}
                   </span>
                   <span className="shrink-0 text-amber-900 dark:text-amber-200">
-                    {batch.qtyRemaining} pcs ·{" "}
+                    {batch.qtyEstimated} pcs ·{" "}
                     {formatDateOnly(batch.expiresAt!, language)}
                   </span>
                 </li>

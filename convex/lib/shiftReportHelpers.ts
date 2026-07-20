@@ -197,6 +197,7 @@ async function enrichProductAggregateUnits(
 function formatTopSellingProducts(
   productMap: Map<string, ProductAggregate>,
   limit: number,
+  sortBy: "qty" | "revenue" | "grossProfit" = "qty",
 ) {
   return Array.from(productMap.values())
     .filter((product) => product.qty > 0)
@@ -210,7 +211,15 @@ function formatTopSellingProducts(
       revenue: product.revenue,
       grossProfit: product.revenue - product.cogs,
     }))
-    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+    .sort((a, b) => {
+      if (sortBy === "revenue") {
+        return b.revenue - a.revenue || b.qty - a.qty;
+      }
+      if (sortBy === "grossProfit") {
+        return b.grossProfit - a.grossProfit || b.revenue - a.revenue;
+      }
+      return b.qty - a.qty || b.revenue - a.revenue;
+    })
     .slice(0, limit);
 }
 
@@ -295,6 +304,7 @@ export async function aggregateTopSellingProductsHybrid(
   businessId: Id<"businesses">,
   range: SaleDateRange,
   limit = 10,
+  sortBy: "qty" | "revenue" | "grossProfit" = "qty",
 ) {
   const lines = await ctx.db
     .query("saleLines")
@@ -347,7 +357,7 @@ export async function aggregateTopSellingProductsHybrid(
   }
 
   await enrichProductAggregateUnits(ctx, productMap);
-  return formatTopSellingProducts(productMap, limit);
+  return formatTopSellingProducts(productMap, limit, sortBy);
 }
 
 /**
