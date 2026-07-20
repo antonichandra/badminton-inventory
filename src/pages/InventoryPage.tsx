@@ -18,11 +18,13 @@ import { useLanguage } from "../core/context/LanguageContext";
 import { useToast } from "../core/context/ToastContext";
 import { formatDateOnly } from "../core/utils/formatDate";
 import { groupByCategory } from "../core/utils/groupByCategory";
+import { groupBySupplier } from "../core/utils/groupBySupplier";
 import {
   CategoryGroupSection,
   CategoryGroupsContainer,
 } from "../core/components/categoryGroup";
 import { showProfitDetail } from "../core/utils/showProfitDetail";
+import { cn } from "../core/utils/cn";
 import {
   KasirTd,
   KasirTh,
@@ -36,6 +38,7 @@ import { formatRupiah } from "./kasir/utils";
 import { ExportStockCardPdfButton } from "./inventory/ExportStockCardPdfButton";
 
 type StockAlert = "empty" | "low" | "ok";
+type InventoryGroupBy = "category" | "supplier";
 
 interface EditingBatch {
   batchId: Id<"stockReceiptItems">;
@@ -65,7 +68,9 @@ export function InventoryPage() {
   const { sessionToken, role } = useAuth();
   const { activeBusinessId } = useBusiness();
   const showCost = showProfitDetail(role);
+  const canGroupBySupplier = role?.name !== "STAFF";
   const [search, setSearch] = useState("");
+  const [groupBy, setGroupBy] = useState<InventoryGroupBy>("category");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editingBatch, setEditingBatch] = useState<EditingBatch | null>(null);
 
@@ -111,10 +116,27 @@ export function InventoryPage() {
   );
   const mainTableColCount = showExpiryColumn ? 7 : 6;
 
-  const inventoryGroups = useMemo(
-    () => groupByCategory(inventory),
-    [inventory],
-  );
+  const effectiveGroupBy =
+    canGroupBySupplier && groupBy === "supplier" ? "supplier" : "category";
+
+  const inventoryGroups = useMemo(() => {
+    if (effectiveGroupBy === "supplier") {
+      return groupBySupplier(
+        inventory,
+        translate("inventoryUnassignedSupplier"),
+      ).map((group) => ({
+        key: group.supplierId ?? group.supplierName,
+        name: group.supplierName,
+        items: group.items,
+      }));
+    }
+
+    return groupByCategory(inventory).map((group) => ({
+      key: group.categoryId ?? group.categoryName,
+      name: group.categoryName,
+      items: group.items,
+    }));
+  }, [effectiveGroupBy, inventory, translate]);
 
   const toggleExpanded = (productId: Id<"products">) => {
     setExpanded((prev) => {
@@ -155,14 +177,40 @@ export function InventoryPage() {
         )}
       </PageTopSection>
 
-      <div className="mb-4 max-w-md">
-        <InputText
-          label={translate("productFilterSearch")}
-          value={search}
-          onChange={setSearch}
-          placeholder={translate("inventorySearchPlaceholder")}
-          type="search"
-        />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-md flex-1">
+          <InputText
+            label={translate("productFilterSearch")}
+            value={search}
+            onChange={setSearch}
+            placeholder={translate("inventorySearchPlaceholder")}
+            type="search"
+          />
+        </div>
+        {canGroupBySupplier && (
+          <div className="flex shrink-0 rounded-lg border border-slate-200 p-0.5 text-xs dark:border-slate-700">
+            {(
+              [
+                ["category", "inventoryViewByCategory"],
+                ["supplier", "inventoryViewBySupplier"],
+              ] as const
+            ).map(([key, labelKey]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setGroupBy(key)}
+                className={cn(
+                  "whitespace-nowrap rounded-md px-2.5 py-1.5 font-medium transition-colors",
+                  groupBy === key
+                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300",
+                )}
+              >
+                {translate(labelKey)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {inventoryData === undefined ? (
@@ -194,97 +242,97 @@ export function InventoryPage() {
           </div>
 
           <CategoryGroupsContainer>
-          {inventoryGroups.map((group) => {
-            const qtyEstimated = group.items.reduce(
-              (sum, row) => sum + row.qtyEstimated,
-              0,
-            );
-            const attentionInGroup = group.items.filter(
-              (row) =>
-                row.stockAlert === "empty" || row.stockAlert === "low",
-            ).length;
-            const metaParts = [
-              translate("inventoryGroupQtyEst").replace(
-                "{qty}",
-                String(qtyEstimated),
-              ),
-            ];
-            if (attentionInGroup > 0) {
-              metaParts.push(
-                translate("inventoryGroupAttention").replace(
-                  "{count}",
-                  String(attentionInGroup),
-                ),
+            {inventoryGroups.map((group) => {
+              const qtyEstimated = group.items.reduce(
+                (sum, row) => sum + row.qtyEstimated,
+                0,
               );
-            }
+              const attentionInGroup = group.items.filter(
+                (row) =>
+                  row.stockAlert === "empty" || row.stockAlert === "low",
+              ).length;
+              const metaParts = [
+                translate("inventoryGroupQtyEst").replace(
+                  "{qty}",
+                  String(qtyEstimated),
+                ),
+              ];
+              if (attentionInGroup > 0) {
+                metaParts.push(
+                  translate("inventoryGroupAttention").replace(
+                    "{count}",
+                    String(attentionInGroup),
+                  ),
+                );
+              }
 
-            return (
-              <CategoryGroupSection
-                key={group.categoryId ?? group.categoryName}
-                categoryName={group.categoryName}
-                itemCountLabel={translate("categoryItemCount").replace(
-                  "{count}",
-                  String(group.items.length),
-                )}
-                meta={metaParts.join(" · ")}
-              >
-                <table className={kasirCompactTableClass}>
-                  <thead className={kasirCompactTheadClass}>
-                    <tr>
-                      <KasirTh compact className="w-8">
-                        <span className="sr-only">Expand</span>
-                      </KasirTh>
-                      <KasirTh compact>
-                        {translate("inventoryColProduct")}
-                      </KasirTh>
-                      <KasirTh compact>
-                        {translate("inventoryColStatus")}
-                      </KasirTh>
-                      <KasirTh compact>
-                        {translate("inventoryColQtyOnHand")}
-                      </KasirTh>
-                      <KasirTh compact>
-                        {translate("inventoryColQtyEstimated")}
-                      </KasirTh>
-                      {showExpiryColumn && (
-                        <KasirTh compact>
-                          {translate("inventoryColNearestExpiry")}
+              return (
+                <CategoryGroupSection
+                  key={group.key}
+                  categoryName={group.name}
+                  itemCountLabel={translate("categoryItemCount").replace(
+                    "{count}",
+                    String(group.items.length),
+                  )}
+                  meta={metaParts.join(" · ")}
+                >
+                  <table className={kasirCompactTableClass}>
+                    <thead className={kasirCompactTheadClass}>
+                      <tr>
+                        <KasirTh compact className="w-8">
+                          <span className="sr-only">Expand</span>
                         </KasirTh>
-                      )}
-                      <KasirTh compact>
-                        {translate("inventoryColSellPrice")}
-                      </KasirTh>
-                    </tr>
-                  </thead>
-                  <tbody className={kasirCompactTbodyClass}>
-                    {group.items.map((row) => (
-                      <ProductStockRows
-                        key={row.productId}
-                        row={row}
-                        isOpen={expanded.has(row.productId)}
-                        language={language}
-                        showCost={showCost}
-                        showExpiryColumn={showExpiryColumn}
-                        mainTableColCount={mainTableColCount}
-                        compact
-                        onToggle={() => toggleExpanded(row.productId)}
-                        onEditBatch={(batch) =>
-                          setEditingBatch({
-                            batchId: batch.batchId,
-                            productName: row.productName,
-                            supplierName: batch.supplierName,
-                            trackExpiry: row.trackExpiry ?? false,
-                            expiresAt: batch.expiresAt,
-                          })
-                        }
-                        translate={translate}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </CategoryGroupSection>
-            );
-          })}
+                        <KasirTh compact>
+                          {translate("inventoryColProduct")}
+                        </KasirTh>
+                        <KasirTh compact>
+                          {translate("inventoryColStatus")}
+                        </KasirTh>
+                        <KasirTh compact>
+                          {translate("inventoryColQtyOnHand")}
+                        </KasirTh>
+                        <KasirTh compact>
+                          {translate("inventoryColQtyEstimated")}
+                        </KasirTh>
+                        {showExpiryColumn && (
+                          <KasirTh compact>
+                            {translate("inventoryColNearestExpiry")}
+                          </KasirTh>
+                        )}
+                        <KasirTh compact>
+                          {translate("inventoryColSellPrice")}
+                        </KasirTh>
+                      </tr>
+                    </thead>
+                    <tbody className={kasirCompactTbodyClass}>
+                      {group.items.map((row) => (
+                        <ProductStockRows
+                          key={`${group.key}-${row.productId}`}
+                          row={row}
+                          isOpen={expanded.has(row.productId)}
+                          language={language}
+                          showCost={showCost}
+                          showExpiryColumn={showExpiryColumn}
+                          mainTableColCount={mainTableColCount}
+                          compact
+                          onToggle={() => toggleExpanded(row.productId)}
+                          onEditBatch={(batch) =>
+                            setEditingBatch({
+                              batchId: batch.batchId,
+                              productName: row.productName,
+                              supplierName: batch.supplierName,
+                              trackExpiry: row.trackExpiry ?? false,
+                              expiresAt: batch.expiresAt,
+                            })
+                          }
+                          translate={translate}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </CategoryGroupSection>
+              );
+            })}
           </CategoryGroupsContainer>
         </div>
       )}

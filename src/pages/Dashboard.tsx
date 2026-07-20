@@ -63,7 +63,7 @@ export function DashboardPage() {
       ? {
           sessionToken,
           businessId: activeBusinessId ?? undefined,
-          limit: 5,
+          withinMonths: 5,
         }
       : "skip",
   );

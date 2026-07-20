@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import {
   assertBusinessAccess,
   resolveScopedBusinessId,
@@ -209,6 +210,7 @@ export const getExpiringBatches = query({
     sessionToken: v.string(),
     businessId: v.optional(v.id("businesses")),
     withinDays: v.optional(v.number()),
+    withinMonths: v.optional(v.number()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -228,10 +230,15 @@ export const getExpiringBatches = query({
     await assertBusinessAccess(ctx, user, role, businessId);
 
     const showCost = isAdmin(role) || isSuperAdmin(role);
-    const cutoff =
-      args.withinDays != null
-        ? Date.now() + args.withinDays * 24 * 60 * 60 * 1000
-        : null;
+    const now = Date.now();
+    let cutoff: number | null = null;
+    if (args.withinMonths != null) {
+      const date = new Date(now);
+      date.setMonth(date.getMonth() + args.withinMonths);
+      cutoff = date.getTime();
+    } else if (args.withinDays != null) {
+      cutoff = now + args.withinDays * 24 * 60 * 60 * 1000;
+    }
 
     const batches = await ctx.db
       .query("stockReceiptItems")
@@ -582,6 +589,46 @@ export const getInventoryStock = query({
 
     const showCost = isAdmin(role) || isSuperAdmin(role);
 
+    const suppliers = await ctx.db
+      .query("suppliers")
+      .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
+      .collect();
+    const supplierNameById = new Map(
+      suppliers.map((supplier) => [String(supplier._id), supplier.name]),
+    );
+
+    const suppliersByProduct = new Map<
+      string,
+      Array<{ supplierId: Id<"suppliers">; supplierName: string }>
+    >();
+
+    for (const product of retailProducts) {
+      const links = await ctx.db
+        .query("supplierProducts")
+        .withIndex("by_productId", (q) => q.eq("productId", product._id))
+        .collect();
+
+      const assigned: Array<{
+        supplierId: Id<"suppliers">;
+        supplierName: string;
+      }> = [];
+
+      for (const link of links) {
+        if (link.businessId !== businessId) continue;
+        const name =
+          supplierNameById.get(String(link.supplierId)) ??
+          (await ctx.db.get(link.supplierId))?.name ??
+          "—";
+        assigned.push({
+          supplierId: link.supplierId,
+          supplierName: name,
+        });
+      }
+
+      assigned.sort((a, b) => a.supplierName.localeCompare(b.supplierName));
+      suppliersByProduct.set(String(product._id), assigned);
+    }
+
     const results = [];
     for (const product of retailProducts) {
       const productBatches = (batchesByProduct.get(product._id) ?? []).sort(
@@ -614,12 +661,14 @@ export const getInventoryStock = query({
         qtyEstimated <= 0 ? ("empty" as const) : qtyEstimated <= LOW_STOCK_THRESHOLD ? ("low" as const) : ("ok" as const);
 
       const category = await resolveProductCategory(ctx, product);
+      const assignedSuppliers = suppliersByProduct.get(String(product._id)) ?? [];
 
       results.push({
         productId: product._id,
         productName: product.name,
         categoryId: category.categoryId,
         categoryName: category.categoryName,
+        suppliers: assignedSuppliers,
         unit: product.unit,
         sellPrice: product.sellPrice,
         trackExpiry: product.trackExpiry ?? false,

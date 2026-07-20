@@ -13,7 +13,7 @@ import { formatDateOnly } from "../core/utils/formatDate";
 import { formatRupiah } from "./kasir/utils";
 import { ChartRangeControls } from "./analytics/ChartRangeControls";
 import { formatGrowthPercent } from "./analytics/chartUtils";
-import { DailySalesChart, type ChartMetric } from "./analytics/DailySalesChart";
+import { DailySalesChart } from "./analytics/DailySalesChart";
 import {
   PeriodInsights,
   type ProductSortBy,
@@ -33,7 +33,6 @@ export function AnalyticsPage() {
   const { sessionToken } = useAuth();
   const { activeBusinessId } = useBusiness();
   const [range, setRange] = useState<AnalyticsRangeState>(getDefaultAnalyticsRange);
-  const [metric, setMetric] = useState<ChartMetric>("revenue");
   const [showAllProducts, setShowAllProducts] = useState(false);
   const [productSortBy, setProductSortBy] = useState<ProductSortBy>("qty");
 
@@ -68,7 +67,7 @@ export function AnalyticsPage() {
       ? {
           sessionToken,
           businessId: activeBusinessId ?? undefined,
-          limit: 5,
+          withinMonths: 5,
         }
       : "skip",
   );
@@ -212,55 +211,30 @@ export function AnalyticsPage() {
       </div>
 
       <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-semibold text-slate-900 dark:text-white">
             {translate("analyticsDailyChart")}
           </h3>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <ChartRangeControls
-              range={range}
-              onRollingChange={handleRollingChange}
-              onMonthChange={(monthValue) =>
-                setRange((prev) => ({ ...prev, mode: "month", monthValue }))
-              }
-              onYearChange={(yearValue) =>
-                setRange((prev) => ({ ...prev, mode: "year", yearValue }))
-              }
-              onModeChange={handleModeChange}
-              labels={{
-                period7: translate("analyticsPeriod7"),
-                period30: translate("analyticsPeriod30"),
-                period90: translate("analyticsPeriod90"),
-                month: translate("analyticsRangeMonth"),
-                year: translate("analyticsRangeYear"),
-                pickMonth: translate("analyticsPickMonth"),
-                pickYear: translate("analyticsPickYear"),
-              }}
-            />
-            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
-              {(
-                [
-                  ["revenue", "analyticsMetricRevenue"],
-                  ["profit", "analyticsMetricProfit"],
-                ] as const
-              ).map(([key, labelKey]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setMetric(key)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                    metric === key
-                      ? key === "revenue"
-                        ? "bg-emerald-600 text-white"
-                        : "bg-indigo-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  {translate(labelKey)}
-                </button>
-              ))}
-            </div>
-          </div>
+          <ChartRangeControls
+            range={range}
+            onRollingChange={handleRollingChange}
+            onMonthChange={(monthValue) =>
+              setRange((prev) => ({ ...prev, mode: "month", monthValue }))
+            }
+            onYearChange={(yearValue) =>
+              setRange((prev) => ({ ...prev, mode: "year", yearValue }))
+            }
+            onModeChange={handleModeChange}
+            labels={{
+              period7: translate("analyticsPeriod7"),
+              period30: translate("analyticsPeriod30"),
+              period90: translate("analyticsPeriod90"),
+              month: translate("analyticsRangeMonth"),
+              year: translate("analyticsRangeYear"),
+              pickMonth: translate("analyticsPickMonth"),
+              pickYear: translate("analyticsPickYear"),
+            }}
+          />
         </div>
 
         {!hasSales && rollups !== undefined ? (
@@ -270,7 +244,6 @@ export function AnalyticsPage() {
         ) : (
           <DailySalesChart
             series={chartSeries}
-            metric={metric}
             granularity={resolveChartGranularity(range)}
             formatValue={formatRupiah}
             metricLabels={{
