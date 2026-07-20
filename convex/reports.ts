@@ -68,6 +68,13 @@ export const getTopSellingProducts = query({
     startDate: v.optional(v.string()),
     endDate: v.optional(v.string()),
     limit: v.optional(v.number()),
+    sortBy: v.optional(
+      v.union(
+        v.literal("qty"),
+        v.literal("revenue"),
+        v.literal("grossProfit"),
+      ),
+    ),
   },
   handler: async (ctx, args) => {
     const { user, role } = await getAuthenticatedUser(ctx, args.sessionToken);
@@ -89,6 +96,7 @@ export const getTopSellingProducts = query({
       businessId,
       range,
       args.limit ?? 10,
+      args.sortBy ?? "qty",
     );
   },
 });
@@ -230,16 +238,63 @@ export const getExpiringBatches = query({
       .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
       .collect();
 
+    const openShift = await getOpenShiftForBusiness(ctx, businessId);
+    const reservedByProduct = new Map<string, number>();
+    if (openShift) {
+      const saleLines = await ctx.db
+        .query("saleLines")
+        .withIndex("by_shiftId", (q) => q.eq("shiftId", openShift._id))
+        .collect();
+
+      for (const line of saleLines) {
+        const product = await ctx.db.get(line.productId);
+        if (!product || product.type !== "RETAIL") continue;
+        reservedByProduct.set(
+          line.productId,
+          (reservedByProduct.get(line.productId) ?? 0) + line.qty,
+        );
+      }
+    }
+
+    // Allocate open-shift sales against batches FEFO (same order as COGS).
+    const batchesByProduct = new Map<string, typeof batches>();
+    for (const batch of batches) {
+      if (batch.qtyRemaining <= 0) continue;
+      const list = batchesByProduct.get(batch.productId) ?? [];
+      list.push(batch);
+      batchesByProduct.set(batch.productId, list);
+    }
+
+    const estimatedRemaining = new Map<string, number>();
+    for (const [productId, productBatches] of batchesByProduct) {
+      const sortedBatches = [...productBatches].sort((a, b) => {
+        const aExpiry = a.expiresAt ?? Number.MAX_SAFE_INTEGER;
+        const bExpiry = b.expiresAt ?? Number.MAX_SAFE_INTEGER;
+        if (aExpiry !== bExpiry) return aExpiry - bExpiry;
+        return a.createdAt - b.createdAt;
+      });
+
+      let reserved = reservedByProduct.get(productId) ?? 0;
+      for (const batch of sortedBatches) {
+        const take = Math.min(reserved, batch.qtyRemaining);
+        reserved -= take;
+        estimatedRemaining.set(batch._id, batch.qtyRemaining - take);
+      }
+    }
+
     const results = [];
     for (const batch of batches) {
-      if (batch.qtyRemaining <= 0 || !batch.expiresAt) continue;
+      if (!batch.expiresAt) continue;
       if (cutoff != null && batch.expiresAt > cutoff) continue;
+
+      const qtyEstimated = estimatedRemaining.get(batch._id) ?? 0;
+      if (qtyEstimated <= 0) continue;
 
       const product = await ctx.db.get(batch.productId);
       results.push({
         productId: batch.productId,
         productName: product?.name ?? "—",
-        qtyRemaining: batch.qtyRemaining,
+        qtyEstimated,
         expiresAt: batch.expiresAt,
         ...(showCost ? { unitCost: batch.unitCost } : {}),
       });
@@ -292,6 +347,24 @@ export const getLowStockProducts = query({
       stockByProduct.set(key, (stockByProduct.get(key) ?? 0) + batch.qtyRemaining);
     }
 
+    const openShift = await getOpenShiftForBusiness(ctx, businessId);
+    const reservedByProduct = new Map<string, number>();
+    if (openShift) {
+      const saleLines = await ctx.db
+        .query("saleLines")
+        .withIndex("by_shiftId", (q) => q.eq("shiftId", openShift._id))
+        .collect();
+
+      for (const line of saleLines) {
+        const product = await ctx.db.get(line.productId);
+        if (!product || product.type !== "RETAIL") continue;
+        reservedByProduct.set(
+          line.productId,
+          (reservedByProduct.get(line.productId) ?? 0) + line.qty,
+        );
+      }
+    }
+
     const products = await ctx.db
       .query("products")
       .withIndex("by_businessId", (q) => q.eq("businessId", businessId))
@@ -302,19 +375,23 @@ export const getLowStockProducts = query({
       if (!product.isActive || product.type !== "RETAIL") continue;
 
       const qtyOnHand = stockByProduct.get(product._id) ?? 0;
-      if (qtyOnHand > maxQty) continue;
+      const reservedQty = reservedByProduct.get(product._id) ?? 0;
+      const qtyEstimated = Math.max(0, qtyOnHand - reservedQty);
+      if (qtyEstimated > maxQty) continue;
 
       results.push({
         productId: product._id,
         productName: product.name,
         unit: product.unit,
-        qtyOnHand,
+        qtyEstimated,
         trackExpiry: product.trackExpiry ?? false,
       });
     }
 
     return results.sort((a, b) => {
-      if (a.qtyOnHand !== b.qtyOnHand) return a.qtyOnHand - b.qtyOnHand;
+      if (a.qtyEstimated !== b.qtyEstimated) {
+        return a.qtyEstimated - b.qtyEstimated;
+      }
       return a.productName.localeCompare(b.productName);
     });
   },

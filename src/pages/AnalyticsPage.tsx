@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "convex/react";
+import { AlertTriangle, Package } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { PageHeader } from "../core/components/PageHeader";
 import { PermissionGuard } from "../core/components/PermissionGuard";
@@ -13,7 +14,10 @@ import { formatRupiah } from "./kasir/utils";
 import { ChartRangeControls } from "./analytics/ChartRangeControls";
 import { formatGrowthPercent } from "./analytics/chartUtils";
 import { DailySalesChart, type ChartMetric } from "./analytics/DailySalesChart";
-import { PeriodInsights } from "./analytics/PeriodInsights";
+import {
+  PeriodInsights,
+  type ProductSortBy,
+} from "./analytics/PeriodInsights";
 import {
   formatAnalyticsRangeLabel,
   getDefaultAnalyticsRange,
@@ -30,6 +34,8 @@ export function AnalyticsPage() {
   const { activeBusinessId } = useBusiness();
   const [range, setRange] = useState<AnalyticsRangeState>(getDefaultAnalyticsRange);
   const [metric, setMetric] = useState<ChartMetric>("revenue");
+  const [showAllProducts, setShowAllProducts] = useState(false);
+  const [productSortBy, setProductSortBy] = useState<ProductSortBy>("qty");
 
   const dateRange = useMemo(() => resolveAnalyticsRange(range), [range]);
   const rangeQueryArgs = useMemo(
@@ -62,7 +68,7 @@ export function AnalyticsPage() {
       ? {
           sessionToken,
           businessId: activeBusinessId ?? undefined,
-          withinDays: 30,
+          limit: 5,
         }
       : "skip",
   );
@@ -79,6 +85,20 @@ export function AnalyticsPage() {
           sessionToken,
           businessId: activeBusinessId ?? undefined,
           ...rangeQueryArgs,
+          limit: 10,
+          sortBy: productSortBy,
+        }
+      : "skip",
+  );
+  const allSellingProducts = useQuery(
+    api.reports.getTopSellingProducts,
+    sessionToken && showAllProducts
+      ? {
+          sessionToken,
+          businessId: activeBusinessId ?? undefined,
+          ...rangeQueryArgs,
+          limit: 1000,
+          sortBy: productSortBy,
         }
       : "skip",
   );
@@ -133,6 +153,9 @@ export function AnalyticsPage() {
   const hasSales = periodStats.totalRevenue > 0;
   const loading = rollups === undefined || monthly === undefined;
   const rangeLabel = formatAnalyticsRangeLabel(range, language, translate);
+
+  const outOfStock = (lowStock ?? []).filter((item) => item.qtyEstimated === 0);
+  const lowStockItems = (lowStock ?? []).filter((item) => item.qtyEstimated > 0);
 
   const handleRollingChange = (period: ChartPeriod) => {
     setRange((prev) => ({ ...prev, mode: "rolling", period }));
@@ -261,15 +284,25 @@ export function AnalyticsPage() {
       <PeriodInsights
         periodLabel={rangeLabel}
         topProducts={topSellingProducts}
+        allProducts={allSellingProducts}
+        showAllProducts={showAllProducts}
+        onShowAllProductsChange={setShowAllProducts}
+        productSortBy={productSortBy}
+        onProductSortByChange={setProductSortBy}
         topCategories={topSellingCategories}
         topGroups={topSpendingGroups}
         labels={{
           topProductsTitle: translate("analyticsTopProducts"),
+          topProductsShowAll: translate("analyticsTopProductsShowAll"),
+          topProductsAllTitle: translate("analyticsTopProductsAllTitle"),
+          sortByQty: translate("analyticsSortByQty"),
+          sortByRevenue: translate("analyticsSortByRevenue"),
+          sortByProfit: translate("analyticsSortByProfit"),
           topCategoriesTitle: translate("analyticsTopCategories"),
           topGroupsTitle: translate("analyticsTopGroups"),
           productName: translate("productColName"),
           categoryName: translate("analyticsCategoryName"),
-          price: translate("productColPrice"),
+          revenue: translate("analyticsMetricRevenue"),
           profit: translate("analyticsMetricProfit"),
           qty: translate("kasirSoldQty"),
           spend: translate("analyticsGroupSpend"),
@@ -304,23 +337,32 @@ export function AnalyticsPage() {
               {translate("analyticsLowStockEmpty")}
             </p>
           ) : (
-            <ul className="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
-              {lowStock!.map((item) => (
+            <ul className="mt-2 space-y-2">
+              {outOfStock.map((item) => (
                 <li
                   key={item.productId}
-                  className="flex items-center justify-between gap-3 py-2 text-sm first:pt-0 last:pb-0"
+                  className="flex items-center gap-3 rounded-lg bg-red-50 px-3 py-2 text-sm dark:bg-red-950/30"
                 >
-                  <span className="font-medium text-slate-900 dark:text-white">
+                  <Package className="h-4 w-4 shrink-0 text-red-600" />
+                  <span className="flex-1 font-medium text-slate-900 dark:text-white">
                     {item.productName}
                   </span>
-                  <span
-                    className={
-                      item.qtyOnHand === 0
-                        ? "rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-400"
-                        : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-400"
-                    }
-                  >
-                    {item.qtyOnHand} {item.unit}
+                  <span className="text-xs font-semibold text-red-600">
+                    {translate("dashboardOutOfStock")}
+                  </span>
+                </li>
+              ))}
+              {lowStockItems.map((item) => (
+                <li
+                  key={item.productId}
+                  className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/50"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                  <span className="flex-1 text-slate-900 dark:text-white">
+                    {item.productName}
+                  </span>
+                  <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                    {item.qtyEstimated} {item.unit}
                   </span>
                 </li>
               ))}
@@ -329,20 +371,24 @@ export function AnalyticsPage() {
         </section>
       </div>
 
-      {(expiring ?? []).length > 0 && (
-        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="font-semibold text-amber-800 dark:text-amber-300">
-              {translate("analyticsExpiring")}
-            </h3>
-            <Link
-              to="/stok"
-              viewTransition
-              className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
-            >
-              {translate("analyticsViewStock")}
-            </Link>
-          </div>
+      <section className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-semibold text-amber-800 dark:text-amber-300">
+            {translate("analyticsExpiring")}
+          </h3>
+          <Link
+            to="/stok"
+            viewTransition
+            className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
+          >
+            {translate("analyticsViewStock")}
+          </Link>
+        </div>
+        {(expiring ?? []).length === 0 ? (
+          <p className="mt-2 text-sm text-amber-800/80 dark:text-amber-300/80">
+            {translate("analyticsExpiringEmpty")}
+          </p>
+        ) : (
           <ul className="mt-2 space-y-1 text-sm">
             {expiring!.map((batch, index) => (
               <li
@@ -353,14 +399,14 @@ export function AnalyticsPage() {
                   {batch.productName}
                 </span>
                 <span className="shrink-0 text-amber-900 dark:text-amber-200">
-                  {batch.qtyRemaining} pcs ·{" "}
+                  {batch.qtyEstimated} pcs ·{" "}
                   {formatDateOnly(batch.expiresAt!, language)}
                 </span>
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
     </PermissionGuard>
   );
 }
