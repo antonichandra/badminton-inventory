@@ -29,8 +29,8 @@ export const dashboard = {
     dashboardQuotaStaff: "Staff",
     dashboardNoAlerts: "Tidak ada alert saat ini",
     dashboardOutOfStock: "Stok habis",
-    dashboardExpiringSoon: "Kadaluarsa terdekat",
-    dashboardNoExpiring: "Tidak ada produk dengan tanggal kadaluarsa",
+    dashboardExpiringSoon: "Kadaluarsa 5 bulan ke depan",
+    dashboardNoExpiring: "Tidak ada produk yang kadaluarsa dalam 5 bulan ke depan",
     dashboardPendingClose: "Pengajuan tutup shift",
   },
   EN: {
@@ -63,8 +63,8 @@ export const dashboard = {
     dashboardQuotaStaff: "Staff",
     dashboardNoAlerts: "No alerts right now",
     dashboardOutOfStock: "Out of stock",
-    dashboardExpiringSoon: "Nearest expiry",
-    dashboardNoExpiring: "No products with an expiry date",
+    dashboardExpiringSoon: "Expiring in the next 5 months",
+    dashboardNoExpiring: "No products expiring in the next 5 months",
     dashboardPendingClose: "Pending shift close",
   },
 } as const;

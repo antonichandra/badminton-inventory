@@ -1,22 +1,23 @@
 import { useCallback, useId, useMemo, useRef, useState } from "react";
-import { cn } from "../../core/utils/cn";
 import {
   formatCompactRupiah,
   getXAxisTickIndices,
 } from "./chartUtils";
 import type { ChartGranularity, ChartSeriesPoint } from "./rangeUtils";
 
-export type ChartMetric = "revenue" | "profit";
-
-interface ChartPoint extends ChartSeriesPoint {
+interface DualPoint {
+  key: string;
+  axisLabel: string;
+  tooltipLabel: string;
   x: number;
-  y: number;
-  value: number;
+  revenue: number;
+  profit: number;
+  revenueY: number;
+  profitY: number;
 }
 
 interface DailySalesChartProps {
   series: ChartSeriesPoint[];
-  metric: ChartMetric;
   granularity: ChartGranularity;
   formatValue: (amount: number) => string;
   metricLabels: {
@@ -31,11 +32,7 @@ const PAD = { top: 12, right: 12, bottom: 28, left: 36 };
 const PLOT_W = WIDTH - PAD.left - PAD.right;
 const PLOT_H = HEIGHT - PAD.top - PAD.bottom;
 const Y_GRID_LINES = 4;
-const TOOLTIP_WIDTH = 148;
-
-function getMetricValue(point: ChartSeriesPoint, metric: ChartMetric): number {
-  return metric === "revenue" ? point.totalRevenue : point.grossProfit;
-}
+const TOOLTIP_WIDTH = 168;
 
 function findNearestIndexByX(svgX: number, pointXs: number[]): number {
   if (pointXs.length <= 1) return 0;
@@ -81,14 +78,22 @@ function svgXToContainerPx(
   return screen.x - container.getBoundingClientRect().left;
 }
 
+function buildLinePath(points: DualPoint[], getY: (point: DualPoint) => number) {
+  return points
+    .map(
+      (point, index) =>
+        `${index === 0 ? "M" : "L"} ${point.x} ${getY(point)}`,
+    )
+    .join(" ");
+}
+
 export function DailySalesChart({
   series,
-  metric,
   granularity,
   formatValue,
   metricLabels,
 }: DailySalesChartProps) {
-  const gradientId = useId().replace(/:/g, "");
+  const revenueGradientId = useId().replace(/:/g, "");
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -96,46 +101,41 @@ export function DailySalesChart({
   const xDenom = Math.max(series.length - 1, 1);
 
   const maxValue = Math.max(
-    ...series.map((point) => getMetricValue(point, metric)),
+    ...series.flatMap((point) => [point.totalRevenue, point.grossProfit]),
     1,
   );
 
-  const points: ChartPoint[] = useMemo(
+  const points: DualPoint[] = useMemo(
     () =>
       series.map((point, index) => {
-        const value = getMetricValue(point, metric);
+        const x = PAD.left + (index / xDenom) * PLOT_W;
         return {
-          ...point,
-          value,
-          x: PAD.left + (index / xDenom) * PLOT_W,
-          y: PAD.top + PLOT_H - (value / maxValue) * PLOT_H,
+          key: point.key,
+          axisLabel: point.axisLabel,
+          tooltipLabel: point.tooltipLabel,
+          x,
+          revenue: point.totalRevenue,
+          profit: point.grossProfit,
+          revenueY: PAD.top + PLOT_H - (point.totalRevenue / maxValue) * PLOT_H,
+          profitY: PAD.top + PLOT_H - (point.grossProfit / maxValue) * PLOT_H,
         };
       }),
-    [series, metric, maxValue, xDenom],
+    [series, maxValue, xDenom],
   );
 
-  const linePath = points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
+  const revenueLinePath = buildLinePath(points, (point) => point.revenueY);
+  const profitLinePath = buildLinePath(points, (point) => point.profitY);
 
   const baseline = PAD.top + PLOT_H;
-  const areaPath =
+  const revenueAreaPath =
     points.length > 0
-      ? `${linePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`
+      ? `${revenueLinePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`
       : "";
 
   const xTickIndices =
     granularity === "month"
       ? Array.from({ length: series.length }, (_, index) => index)
       : getXAxisTickIndices(series.length);
-
-  const strokeClass =
-    metric === "revenue" ? "stroke-emerald-500" : "stroke-indigo-500";
-  const fillStart = metric === "revenue" ? "#10b981" : "#6366f1";
-  const dotFillClass =
-    metric === "revenue"
-      ? "fill-emerald-500 stroke-white dark:stroke-slate-900"
-      : "fill-indigo-500 stroke-white dark:stroke-slate-900";
 
   const horizontalGridYs = useMemo(
     () =>
@@ -203,36 +203,33 @@ export function DailySalesChart({
     tooltipStyle = { left, width: TOOLTIP_WIDTH };
   }
 
-  const secondaryMetric = metric === "revenue" ? "profit" : "revenue";
-  const secondaryLabel =
-    secondaryMetric === "revenue" ? metricLabels.revenue : metricLabels.profit;
-
   return (
     <div ref={containerRef} className="relative touch-none select-none">
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          {metricLabels.revenue}
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+          <span className="h-2 w-2 rounded-full bg-indigo-500" />
+          {metricLabels.profit}
+        </span>
+      </div>
+
       {activePoint && tooltipStyle && (
         <div
-          className="pointer-events-none absolute top-0 z-10 rounded-lg border border-slate-200 bg-white/95 px-2.5 py-2 shadow-md backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
+          className="pointer-events-none absolute top-7 z-10 rounded-lg border border-slate-200 bg-white/95 px-2.5 py-2 shadow-md backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
           style={tooltipStyle}
           aria-live="polite"
         >
           <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
             {activePoint.tooltipLabel}
           </p>
-          <p
-            className={cn(
-              "mt-0.5 text-sm font-semibold tabular-nums",
-              metric === "revenue"
-                ? "text-emerald-700 dark:text-emerald-400"
-                : "text-indigo-700 dark:text-indigo-400",
-            )}
-          >
-            {metric === "revenue" ? metricLabels.revenue : metricLabels.profit}
-            {": "}
-            {formatValue(activePoint.value)}
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+            {metricLabels.revenue}: {formatValue(activePoint.revenue)}
           </p>
-          <p className="mt-0.5 text-xs tabular-nums text-slate-600 dark:text-slate-400">
-            {secondaryLabel}:{" "}
-            {formatValue(getMetricValue(activePoint, secondaryMetric))}
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-indigo-700 dark:text-indigo-400">
+            {metricLabels.profit}: {formatValue(activePoint.profit)}
           </p>
         </div>
       )}
@@ -240,15 +237,15 @@ export function DailySalesChart({
       <svg
         ref={svgRef}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="h-auto w-full max-h-[360px] text-emerald-500"
+        className="h-auto w-full max-h-[360px]"
         role="img"
         aria-label="Sales chart"
       >
         <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={fillStart} stopOpacity="0.35" />
-            <stop offset="85%" stopColor={fillStart} stopOpacity="0.08" />
-            <stop offset="100%" stopColor={fillStart} stopOpacity="0" />
+          <linearGradient id={revenueGradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.28" />
+            <stop offset="85%" stopColor="#10b981" stopOpacity="0.06" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -277,12 +274,26 @@ export function DailySalesChart({
           </text>
         ))}
 
-        {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} />}
-        {linePath && (
+        {revenueAreaPath && (
+          <path d={revenueAreaPath} fill={`url(#${revenueGradientId})`} />
+        )}
+
+        {revenueLinePath && (
           <path
-            d={linePath}
+            d={revenueLinePath}
             fill="none"
-            className={strokeClass}
+            className="stroke-emerald-500"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {profitLinePath && (
+          <path
+            d={profitLinePath}
+            fill="none"
+            className="stroke-indigo-500"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -304,20 +315,30 @@ export function DailySalesChart({
 
         {points.map((point, index) => {
           const isActive = activeIndex === index;
-          const showDot = isActive || point.value > 0;
-
-          if (!showDot) return null;
+          const showRevenueDot = isActive || point.revenue > 0;
+          const showProfitDot = isActive || point.profit > 0;
 
           return (
-            <circle
-              key={point.key}
-              cx={point.x}
-              cy={point.y}
-              r={isActive ? 5 : 3}
-              className={dotFillClass}
-              strokeWidth={isActive ? 2 : 1}
-              pointerEvents="none"
-            />
+            <g key={point.key} pointerEvents="none">
+              {showRevenueDot && (
+                <circle
+                  cx={point.x}
+                  cy={point.revenueY}
+                  r={isActive ? 5 : 3}
+                  className="fill-emerald-500 stroke-white dark:stroke-slate-900"
+                  strokeWidth={isActive ? 2 : 1}
+                />
+              )}
+              {showProfitDot && (
+                <circle
+                  cx={point.x}
+                  cy={point.profitY}
+                  r={isActive ? 5 : 3}
+                  className="fill-indigo-500 stroke-white dark:stroke-slate-900"
+                  strokeWidth={isActive ? 2 : 1}
+                />
+              )}
+            </g>
           );
         })}
 
