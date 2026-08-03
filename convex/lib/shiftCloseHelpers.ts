@@ -479,10 +479,13 @@ export async function computeClosePreview(
     soldFromLines: number;
     overInputQty: number;
     missInputQty: number;
+    unitPrice: number;
+    revenue: number;
   }> = [];
   let overInputQtyTotal = 0;
   let missInputQtyTotal = 0;
   let impliedRevenue = 0;
+  const previewAsOf = Date.now();
 
   const saleLines = await ctx.db
     .query("saleLines")
@@ -525,13 +528,21 @@ export async function computeClosePreview(
 
     overInputQtyTotal += overInputQty;
     missInputQtyTotal += missInputQty;
+
+    const unitPrice =
+      product.type === "RETAIL"
+        ? await resolveRetailSellPriceAt(
+            ctx,
+            snapshot.productId,
+            shift.businessId,
+            previewAsOf,
+          )
+        : 0;
+    const soldQtyForRevenue = Math.max(0, soldFromStock);
+    const revenue =
+      product.type === "RETAIL" ? soldQtyForRevenue * unitPrice : 0;
+
     if (product.type === "RETAIL" && missInputQty > 0) {
-      const unitPrice = await resolveRetailSellPriceAt(
-        ctx,
-        snapshot.productId,
-        shift.businessId,
-        Date.now(),
-      );
       impliedRevenue += missInputQty * unitPrice;
     }
 
@@ -550,6 +561,8 @@ export async function computeClosePreview(
       soldFromLines,
       overInputQty,
       missInputQty,
+      unitPrice,
+      revenue,
     });
   }
 
@@ -560,7 +573,6 @@ export async function computeClosePreview(
   };
   const cashSummary = await getShiftCashSummary(ctx, previewShift);
   const recordedRevenue = cashSummary.totalSales;
-  const previewAsOf = Date.now();
   const totalRevenue = await computePhysicalTotalRevenue(
     ctx,
     shift._id,
