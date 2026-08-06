@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { ArrowLeft, Plus, CreditCard, MoreHorizontal } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -105,6 +105,33 @@ export function KasirPage() {
     kasirContext.openShift.businessId === kasirContext.activeBusinessId
       ? kasirContext.openShift
       : null;
+
+  const syncOpenShiftOpeningStock = useMutation(
+    api.shifts.syncOpenShiftOpeningStock,
+  );
+  const openingSyncStarted = useRef(false);
+
+  useEffect(() => {
+    if (!sessionToken || !activeBusinessId) return;
+    const key = `opening-stock-synced-business:${activeBusinessId}`;
+    if (!openShift) {
+      sessionStorage.removeItem(key);
+      openingSyncStarted.current = false;
+      return;
+    }
+    if (sessionStorage.getItem(key) === "1" || openingSyncStarted.current) {
+      return;
+    }
+    openingSyncStarted.current = true;
+    void syncOpenShiftOpeningStock({ sessionToken })
+      .then(() => {
+        sessionStorage.setItem(key, "1");
+      })
+      .catch((error) => {
+        openingSyncStarted.current = false;
+        console.error(error);
+      });
+  }, [sessionToken, activeBusinessId, openShift, syncOpenShiftOpeningStock]);
 
   const saleLinesData = useQuery(
     api.shifts.listSaleLines,

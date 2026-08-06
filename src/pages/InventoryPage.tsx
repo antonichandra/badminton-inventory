@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, ChevronDown, ChevronRight, ClipboardList, Pencil } from "lucide-react";
@@ -74,6 +74,11 @@ export function InventoryPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editingBatch, setEditingBatch] = useState<EditingBatch | null>(null);
 
+  const syncOpenShiftOpeningStock = useMutation(
+    api.shifts.syncOpenShiftOpeningStock,
+  );
+  const openingSyncStarted = useRef(false);
+
   const inventoryData = useQuery(
     api.reports.getInventoryStock,
     sessionToken
@@ -87,6 +92,36 @@ export function InventoryPage() {
 
   const inventory = inventoryData?.products ?? [];
   const hasOpenShift = inventoryData?.hasOpenShift ?? false;
+
+  // Align pre-shift book to openingQty once per open shift (idempotent;
+  // does not touch penerimaan recorded after the shift opened).
+  useEffect(() => {
+    if (!sessionToken || !activeBusinessId) return;
+    const key = `opening-stock-synced-business:${activeBusinessId}`;
+    if (!hasOpenShift) {
+      sessionStorage.removeItem(key);
+      openingSyncStarted.current = false;
+      return;
+    }
+    if (sessionStorage.getItem(key) === "1" || openingSyncStarted.current) {
+      return;
+    }
+    openingSyncStarted.current = true;
+
+    void syncOpenShiftOpeningStock({ sessionToken })
+      .then(() => {
+        sessionStorage.setItem(key, "1");
+      })
+      .catch((error) => {
+        openingSyncStarted.current = false;
+        console.error(error);
+      });
+  }, [
+    sessionToken,
+    hasOpenShift,
+    activeBusinessId,
+    syncOpenShiftOpeningStock,
+  ]);
 
   const stockCardContext = useQuery(
     api.stockCards.getStockCardFormContext,
