@@ -1,10 +1,11 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { OPENING_SUPPLIER_NAME } from "./openingStockHelpers";
+import { OPENING_SUPPLIER_NAME } from "./openingStockConstants";
 
 export async function deleteStockReceiptCompletely(
   ctx: MutationCtx,
   receiptId: Id<"stockReceipts">,
+  options?: { allowOpeningBalance?: boolean },
 ) {
   const receipt = await ctx.db.get(receiptId);
   if (!receipt) {
@@ -20,7 +21,8 @@ export async function deleteStockReceiptCompletely(
   }
 
   const supplier = await ctx.db.get(receipt.supplierId);
-  if (supplier?.name === OPENING_SUPPLIER_NAME) {
+  const isOpening = supplier?.name === OPENING_SUPPLIER_NAME;
+  if (isOpening && !options?.allowOpeningBalance) {
     throw new Error("RECEIPT_CANNOT_DELETE_OPENING");
   }
 
@@ -68,7 +70,11 @@ export async function deleteStockReceiptCompletely(
     .collect();
 
   for (const movement of movements) {
-    if (movement.type === "RECEIPT" && movement.refId === receiptId) {
+    const isReceiptRef =
+      movement.type === "RECEIPT" && movement.refId === receiptId;
+    const isOpeningRef =
+      movement.type === "OPENING" && movement.refId === receiptId;
+    if (isReceiptRef || isOpeningRef) {
       await ctx.db.delete(movement._id);
     }
   }

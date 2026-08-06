@@ -41,7 +41,8 @@ import {
   loadShiftStockReceipts,
   loadShiftWriteOffs,
 } from "./lib/shiftDetailHelpers";
-import { createOpeningBalanceBatch } from "./lib/openingStockHelpers";
+import { applyOpeningStockToBook } from "./lib/openingStockHelpers";
+import { syncOpenShiftOpeningStock as syncOpenShiftOpeningStockHelper } from "./lib/openingStockRepairHelpers";
 import { deleteStockReceiptCompletely, isOpeningBalanceSupplier } from "./lib/stockReceiptDeleteHelpers";
 import { assertProductsLinkedToSupplier } from "./lib/supplierProductHelpers";
 import {
@@ -371,7 +372,7 @@ export const getShiftLiveStats = query({
     const cashEntries = await loadShiftCashEntries(ctx, shift._id);
     const writeOffs = await loadShiftWriteOffs(ctx, shift._id);
 
-    const salesByPriceTier = usePhysical
+    const salesByPriceTierRaw = usePhysical
       ? await buildPhysicalSalesByPriceTier(
           ctx,
           shift._id,
@@ -381,6 +382,21 @@ export const getShiftLiveStats = query({
           liveAsOf,
         )
       : salesStats.salesByPriceTier;
+
+    const stockByProduct = new Map(
+      stockReconciliation.map((row) => [
+        row.productId as string,
+        { receivedQty: row.receivedQty, writeOffQty: row.writeOffQty },
+      ]),
+    );
+    const salesByPriceTier = salesByPriceTierRaw.map((tier) => {
+      const stock = stockByProduct.get(tier.productId);
+      return {
+        ...tier,
+        receivedQty: stock?.receivedQty ?? 0,
+        writeOffQty: stock?.writeOffQty ?? 0,
+      };
+    });
 
     const topProducts = usePhysical
       ? salesByPriceTier
@@ -944,23 +960,50 @@ export const openShift = mutation({
         updatedAt: now,
       });
 
-      if (item.qty > 0) {
-        await createOpeningBalanceBatch(ctx, {
-          shiftId,
-          businessId: context.activeBusinessId,
-          productId: item.productId,
-          qty: item.qty,
-          recordedBy: context.user._id,
-        });
-      }
+      await applyOpeningStockToBook(ctx, {
+        shiftId,
+        businessId: context.activeBusinessId,
+        productId: item.productId,
+        qty: item.qty,
+        recordedBy: context.user._id,
+      });
     }
 
     return { shiftId };
   },
 });
 
-export const addSaleLine = mutation({
+/** Idempotent sync: align pre-shift book stock to openingQty; leave shift penerimaan alone. */
+export const syncOpenShiftOpeningStock = mutation({
   args: {
+    sessionToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const context = await getKasirBusinessContext(ctx, args.sessionToken);
+    if (!context.activeBusinessId) {
+      throw new Error("NO_ACTIVE_BUSINESS");
+    }
+
+    await assertBusinessAccess(
+      ctx,
+      context.user,
+      context.role,
+      context.activeBusinessId,
+    );
+
+    const shift = await getOpenShiftForBusiness(
+      ctx,
+      context.activeBusinessId,
+    );
+    if (!shift) {
+      return { syncedProducts: 0 };
+    }
+
+    return syncOpenShiftOpeningStockHelper(ctx, shift, context.user._id);
+  },
+});
+
+export const addSaleLine = mutation({  args: {
     sessionToken: v.string(),
     productId: v.id("products"),
     qty: v.number(),

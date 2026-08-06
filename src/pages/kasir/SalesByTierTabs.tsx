@@ -29,6 +29,8 @@ export type PriceTierRow = {
   grossProfit?: number;
   productType?: "RETAIL" | "RENTAL";
   rentalHoursTotal?: number;
+  receivedQty?: number;
+  writeOffQty?: number;
 };
 
 type SalesTab = "retail" | "rental";
@@ -36,6 +38,17 @@ type SalesTab = "retail" | "rental";
 interface SalesByTierTabsProps {
   tiers: PriceTierRow[];
   showGrossProfit?: boolean;
+}
+
+function formatHours(value: number): string {
+  if (!Number.isFinite(value) || value === 0) return "0";
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(1).replace(/\.0$/, "");
+}
+
+function rentalHoursPerUnit(tier: PriceTierRow): number {
+  if (tier.qty <= 0) return 0;
+  return (tier.rentalHoursTotal ?? 0) / tier.qty;
 }
 
 function TierTable({
@@ -62,12 +75,15 @@ function TierTable({
     <CategoryGroupsContainer>
       {groups.map((group) => {
         const totalRevenue = group.items.reduce((sum, tier) => sum + tier.revenue, 0);
-        const totalQty = group.items.reduce(
-          (sum, tier) =>
-            sum +
-            (tab === "rental" ? (tier.rentalHoursTotal ?? 0) : tier.qty),
+        const totalUnits = group.items.reduce((sum, tier) => sum + tier.qty, 0);
+        const totalHours = group.items.reduce(
+          (sum, tier) => sum + (tier.rentalHoursTotal ?? 0),
           0,
         );
+        const meta =
+          tab === "rental"
+            ? `${totalUnits} ${translate("kasirUnits")} · ${formatHours(totalHours)} ${translate("kasirHours").toLowerCase()} · ${formatRupiah(totalRevenue)}`
+            : `${totalUnits} · ${formatRupiah(totalRevenue)}`;
 
         return (
           <CategoryGroupSection
@@ -77,7 +93,7 @@ function TierTable({
               "{count}",
               String(group.items.length),
             )}
-            meta={`${totalQty} · ${formatRupiah(totalRevenue)}`}
+            meta={meta}
           >
             <table className={kasirCompactTableClass}>
               <thead className={kasirCompactTheadClass}>
@@ -87,11 +103,18 @@ function TierTable({
                   {showGrossProfit && tab === "retail" && (
                     <KasirTh compact>{translate("kasirBuyPrice")}</KasirTh>
                   )}
-                  <KasirTh compact>
-                    {tab === "rental"
-                      ? translate("kasirSoldUnitHours")
-                      : translate("kasirSoldQty")}
-                  </KasirTh>
+                  {tab === "rental" ? (
+                    <>
+                      <KasirTh compact>{translate("kasirUnit")}</KasirTh>
+                      <KasirTh compact>{translate("kasirHours")}</KasirTh>
+                    </>
+                  ) : (
+                    <>
+                      <KasirTh compact>{translate("kasirSoldQty")}</KasirTh>
+                      <KasirTh compact>{translate("kasirReceived")}</KasirTh>
+                      <KasirTh compact>{translate("kasirWriteOff")}</KasirTh>
+                    </>
+                  )}
                   <KasirTh compact>{translate("kasirRevenue")}</KasirTh>
                   {showGrossProfit && (
                     <KasirTh compact>{translate("kasirGrossProfit")}</KasirTh>
@@ -121,11 +144,20 @@ function TierTable({
                           : "—"}
                       </KasirTd>
                     )}
-                    <KasirTd compact>
-                      {tab === "rental"
-                        ? (tier.rentalHoursTotal ?? 0)
-                        : tier.qty}
-                    </KasirTd>
+                    {tab === "rental" ? (
+                      <>
+                        <KasirTd compact>{tier.qty}</KasirTd>
+                        <KasirTd compact>
+                          {formatHours(rentalHoursPerUnit(tier))}
+                        </KasirTd>
+                      </>
+                    ) : (
+                      <>
+                        <KasirTd compact>{tier.qty}</KasirTd>
+                        <KasirTd compact>{tier.receivedQty ?? 0}</KasirTd>
+                        <KasirTd compact>{tier.writeOffQty ?? 0}</KasirTd>
+                      </>
+                    )}
                     <KasirTd compact className="font-medium">
                       {formatRupiah(tier.revenue)}
                     </KasirTd>
@@ -212,4 +244,32 @@ export function SalesByTierTabs({
       />
     </div>
   );
+}
+
+/** Attach shift stock in/out qty onto sales tier rows (by product). */
+export function withStockMovementQty<
+  T extends { productId: Id<"products"> },
+>(
+  tiers: T[],
+  stockRows: Array<{
+    productId: Id<"products">;
+    receivedQty: number;
+    writeOffQty: number;
+  }>,
+): Array<T & { receivedQty: number; writeOffQty: number }> {
+  const byProduct = new Map(
+    stockRows.map((row) => [
+      row.productId,
+      { receivedQty: row.receivedQty, writeOffQty: row.writeOffQty },
+    ]),
+  );
+
+  return tiers.map((tier) => {
+    const stock = byProduct.get(tier.productId);
+    return {
+      ...tier,
+      receivedQty: stock?.receivedQty ?? 0,
+      writeOffQty: stock?.writeOffQty ?? 0,
+    };
+  });
 }

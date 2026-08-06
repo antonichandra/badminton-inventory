@@ -11,7 +11,7 @@ import { formatDateOnly, formatDateTime } from "../../core/utils/formatDate";
 import { showProfitDetail } from "../../core/utils/showProfitDetail";
 import { ExportShiftButton } from "./ExportShiftButton";
 import { ExportShiftPdfButton } from "./ExportShiftPdfButton";
-import { SalesByTierTabs, type PriceTierRow } from "./SalesByTierTabs";
+import { SalesByTierTabs, type PriceTierRow, withStockMovementQty } from "./SalesByTierTabs";
 import { groupByCategory } from "../../core/utils/groupByCategory";
 import {
   CategoryGroupSection,
@@ -424,7 +424,7 @@ function StockReconTable({
             {translate("kasirSalesByPrice")}
           </p>
           <SalesByTierTabs
-            tiers={salesByPriceTier}
+            tiers={withStockMovementQty(salesByPriceTier, rows)}
             showGrossProfit={showGrossProfit}
           />
         </div>
